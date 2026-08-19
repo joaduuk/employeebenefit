@@ -7,6 +7,7 @@ from sqlalchemy import Column, String, Integer, Boolean, DateTime, Enum as SAEnu
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
+from app.models.approval import ApplicationStatus, ApprovalAuditMixin
 
 
 class PayrollFrequency(str, enum.Enum):
@@ -15,17 +16,18 @@ class PayrollFrequency(str, enum.Enum):
     MONTHLY = "monthly"
 
 
-class EmployerStatus(str, enum.Enum):
-    ACTIVE = "active"
-    SUSPENDED = "suspended"
-
-
-class Employer(Base):
+class Employer(Base, ApprovalAuditMixin):
     """
     One row per employer/company. This is where the billing-cycle engine
     config lives — payroll day, cutoff, and settlement delays are all
     per-employer rather than a single fixed monthly schedule, per the
     design discussion: "make the employer the billing cycle."
+
+    Self-registers, then requires platform approval (same two-layer model
+    as Merchant): `application_status` gates the account, `benefit_active`
+    is the single capability flag — once approved, the platform can still
+    pause the whole benefit for this employer (e.g. a billing dispute)
+    without changing their application status back to anything.
     """
     __tablename__ = "employers"
 
@@ -61,7 +63,11 @@ class Employer(Base):
     allowed_categories = Column(Text, nullable=True)
     blocked_categories = Column(Text, nullable=True)
 
-    status = Column(SAEnum(EmployerStatus), nullable=False, default=EmployerStatus.ACTIVE)
+    # --- Layer 1: application status (does this account exist in good standing) ---
+    application_status = Column(SAEnum(ApplicationStatus), nullable=False, default=ApplicationStatus.PENDING)
+
+    # --- Layer 2: capability (can employees actually transact right now) ---
+    benefit_active = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
