@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -35,7 +36,7 @@ function PasswordField({ value, onChange, label = 'Password', placeholder = '', 
           onClick={() => setShow(s => !s)}
           style={{
             position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)',
-            background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: 0,
+            background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: 0,
             display: 'flex', alignItems: 'center',
           }}
           tabIndex={-1}
@@ -48,20 +49,20 @@ function PasswordField({ value, onChange, label = 'Password', placeholder = '', 
   );
 }
 
-const inputStyle = { width: '100%', padding: '0.75rem', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '1rem', boxSizing: 'border-box' };
-const labelStyle = { display: 'block', marginBottom: '0.4rem', color: '#374151', fontWeight: '600', fontSize: '0.875rem' };
+const inputStyle = { width: '100%', padding: '0.75rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '1rem', boxSizing: 'border-box', fontFamily: 'var(--font-body)', color: 'var(--color-text)' };
+const labelStyle = { display: 'block', marginBottom: '0.4rem', color: 'var(--color-text-secondary)', fontWeight: '600', fontSize: '0.875rem' };
 const fieldStyle = { marginBottom: '1rem' };
 
 const ErrorBanner = ({ msg }) => msg ? (
-  <div style={{ background: '#fef2f2', color: '#b91c1c', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem', border: '1px solid #fecaca' }}>{msg}</div>
+  <div style={{ background: 'var(--color-danger-bg)', color: 'var(--color-danger-text)', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem', border: '1px solid var(--color-danger-border)' }}>{msg}</div>
 ) : null;
 
 const SuccessBanner = ({ msg }) => msg ? (
-  <div style={{ background: '#f0fdf4', color: '#166534', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem', border: '1px solid #bbf7d0' }}>{msg}</div>
+  <div style={{ background: 'var(--color-success-bg)', color: 'var(--color-success-text)', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem', border: '1px solid var(--color-success-border)' }}>{msg}</div>
 ) : null;
 
 const SubmitBtn = ({ loading, label, loadingLabel = 'Please wait…' }) => (
-  <button type="submit" disabled={loading} style={{ width: '100%', padding: '0.75rem', background: loading ? '#9ca3af' : '#1a3d6b', color: 'white', border: 'none', borderRadius: '6px', fontSize: '1rem', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer' }}>
+  <button type="submit" disabled={loading} style={{ width: '100%', padding: '0.75rem', background: loading ? 'var(--color-border-strong)' : 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', fontSize: '1rem', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer' }}>
     {loading ? loadingLabel : label}
   </button>
 );
@@ -93,7 +94,7 @@ function LoginView({ onSwitch, onForgot }) {
 
   return (
     <>
-      <h2 style={{ marginBottom: '1.25rem', textAlign: 'center' }}>Welcome Back</h2>
+      <h2 style={{ marginBottom: '1.25rem', textAlign: 'center', fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)' }}>Welcome Back</h2>
       <ErrorBanner msg={error} />
       <form onSubmit={handleSubmit}>
         <div style={fieldStyle}>
@@ -102,58 +103,13 @@ function LoginView({ onSwitch, onForgot }) {
         </div>
         <PasswordField value={password} onChange={e => setPassword(e.target.value)} />
         <div style={{ textAlign: 'right', marginBottom: '1rem', marginTop: '-0.5rem' }}>
-          <button type="button" onClick={onForgot} style={{ background: 'none', border: 'none', color: '#1a3d6b', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}>Forgot password?</button>
+          <button type="button" onClick={onForgot} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}>Forgot password?</button>
         </div>
         <SubmitBtn loading={loading} label="Sign In" />
       </form>
-      <p style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '0.9rem' }}>
+      <p style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
         Don't have an account?{' '}
-        <button type="button" onClick={() => onSwitch('register')} style={{ background: 'none', border: 'none', color: '#1a3d6b', cursor: 'pointer', fontWeight: '600' }}>Sign Up</button>
-      </p>
-    </>
-  );
-}
-
-function RegisterView({ onSwitch }) {
-  const [form, setForm] = useState({ email: '', password: '', full_name: '', phone: '' });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [loading, setLoading] = useState(false);
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError(''); setSuccess('');
-    if (form.password.length < 8) { setError('Password must be at least 8 characters'); return; }
-    setLoading(true);
-    try {
-      // NOTE: role defaults to "employee" server-side. Company/merchant/admin
-      // accounts should be provisioned via an invite flow later, not open self-register.
-      await API.post('/auth/register', form);
-      setSuccess("Account created! Check your email to verify before signing in.");
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed');
-    } finally { setLoading(false); }
-  };
-
-  return (
-    <>
-      <h2 style={{ marginBottom: '1.25rem', textAlign: 'center' }}>Create Account</h2>
-      <ErrorBanner msg={error} />
-      <SuccessBanner msg={success} />
-      {!success && (
-        <form onSubmit={handleSubmit}>
-          <div style={fieldStyle}><label style={labelStyle}>Full Name</label>
-            <input type="text" required value={form.full_name} onChange={set('full_name')} style={inputStyle} /></div>
-          <div style={fieldStyle}><label style={labelStyle}>Email</label>
-            <input type="email" required value={form.email} onChange={set('email')} style={inputStyle} /></div>
-          <PasswordField value={form.password} onChange={set('password')} placeholder="Min. 8 characters" />
-          <SubmitBtn loading={loading} label="Create Account" />
-        </form>
-      )}
-      <p style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '0.9rem' }}>
-        Already have an account?{' '}
-        <button type="button" onClick={() => onSwitch('login')} style={{ background: 'none', border: 'none', color: '#1a3d6b', cursor: 'pointer', fontWeight: '600' }}>Sign In</button>
+        <Link to="/register" style={{ color: 'var(--color-primary)', fontWeight: '600', textDecoration: 'none' }}>Sign Up</Link>
       </p>
     </>
   );
@@ -179,7 +135,7 @@ function ForgotPasswordView({ onSwitch }) {
 
   return (
     <>
-      <h2 style={{ marginBottom: '1.25rem', textAlign: 'center' }}>Reset Password</h2>
+      <h2 style={{ marginBottom: '1.25rem', textAlign: 'center', fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)' }}>Reset Password</h2>
       <ErrorBanner msg={error} />
       <SuccessBanner msg={success} />
       {!success && (
@@ -189,8 +145,8 @@ function ForgotPasswordView({ onSwitch }) {
           <SubmitBtn loading={loading} label="Send Reset Link" loadingLabel="Sending…" />
         </form>
       )}
-      <p style={{ textAlign: 'center', marginTop: '1.25rem' }}>
-        <button type="button" onClick={() => onSwitch('login')} style={{ background: 'none', border: 'none', color: '#1a3d6b', cursor: 'pointer', fontWeight: '600' }}>← Back to Sign In</button>
+      <p style={{ textAlign: 'center', marginTop: '1.25rem', color: 'var(--color-text-secondary)' }}>
+        <button type="button" onClick={() => onSwitch('login')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: '600' }}>← Back to Sign In</button>
       </p>
     </>
   );
@@ -222,7 +178,7 @@ function ResetPasswordView({ token, onSwitch }) {
 
   return (
     <>
-      <h2 style={{ marginBottom: '1.25rem', textAlign: 'center' }}>Set New Password</h2>
+      <h2 style={{ marginBottom: '1.25rem', textAlign: 'center', fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)' }}>Set New Password</h2>
       <ErrorBanner msg={error} />
       <SuccessBanner msg={success} />
       {!success && (
@@ -232,8 +188,8 @@ function ResetPasswordView({ token, onSwitch }) {
           <SubmitBtn loading={loading} label="Reset Password" />
         </form>
       )}
-      <p style={{ textAlign: 'center', marginTop: '1.25rem' }}>
-        <button type="button" onClick={() => onSwitch('login')} style={{ background: 'none', border: 'none', color: '#1a3d6b', cursor: 'pointer', fontWeight: '600' }}>← Back to Sign In</button>
+      <p style={{ textAlign: 'center', marginTop: '1.25rem', color: 'var(--color-text-secondary)' }}>
+        <button type="button" onClick={() => onSwitch('login')} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: '600' }}>← Back to Sign In</button>
       </p>
     </>
   );
@@ -245,20 +201,25 @@ export default function Login() {
   const [view, setView] = useState(resetToken ? 'reset' : 'login');
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1a3d6b 0%, #0f2544 100%)', padding: '1rem' }}>
-      <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', width: '100%', maxWidth: '400px', overflow: 'hidden' }}>
-        <div style={{ background: 'linear-gradient(135deg, #1a3d6b, #0f2544)', padding: '1.5rem', textAlign: 'center' }}>
-          <span style={{ color: 'white', fontSize: '1.6rem', fontWeight: '400', fontFamily: 'Georgia, serif' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg)', padding: '1rem', fontFamily: 'var(--font-body)' }}>
+      <div style={{ background: 'var(--color-surface)', borderRadius: '12px', boxShadow: '0 20px 60px rgba(31,42,55,0.12)', width: '100%', maxWidth: '400px', overflow: 'hidden', border: '1px solid var(--color-border)' }}>
+        <div style={{ background: 'var(--color-primary)', padding: '1.5rem', textAlign: 'center' }}>
+          <span style={{ color: 'var(--color-on-primary)', fontSize: '1.6rem', fontWeight: '400', fontFamily: 'var(--font-heading)' }}>
             EEB
           </span>
         </div>
         <div style={{ padding: '2rem' }}>
           {view === 'login' && <LoginView onSwitch={setView} onForgot={() => setView('forgot')} />}
-          {view === 'register' && <RegisterView onSwitch={setView} />}
           {view === 'forgot' && <ForgotPasswordView onSwitch={setView} />}
           {view === 'reset' && <ResetPasswordView token={resetToken} onSwitch={setView} />}
         </div>
       </div>
+
+      <p style={{ marginTop: '1.5rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+        <Link to="/about" style={{ color: 'var(--color-text-muted)', textDecoration: 'none' }}>About EEB</Link>
+        {' · '}
+        <Link to="/faq" style={{ color: 'var(--color-text-muted)', textDecoration: 'none' }}>FAQ</Link>
+      </p>
     </div>
   );
 }

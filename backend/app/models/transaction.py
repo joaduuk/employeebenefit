@@ -34,7 +34,10 @@ class Transaction(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
-    employee_id = Column(UUID(as_uuid=True), ForeignKey("employee_profiles.id"), nullable=False)
+    # Nullable: a merchant generates a transaction before any employee has
+    # claimed it — employee_id is only set once someone looks up the code
+    # and approves (or declines) it. NOT set at creation time.
+    employee_id = Column(UUID(as_uuid=True), ForeignKey("employee_profiles.id"), nullable=True)
     merchant_id = Column(UUID(as_uuid=True), ForeignKey("merchants.id"), nullable=False)
 
     # Assigned once the transaction is approved and falls into a cycle

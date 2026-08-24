@@ -37,22 +37,22 @@ export default function VerifyEmail() {
   }, []);
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1a3d6b 0%, #0f2544 100%)', padding: '1rem' }}>
-      <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', width: '100%', maxWidth: '400px', padding: '2.5rem 2rem', textAlign: 'center' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg)', padding: '1rem', fontFamily: 'var(--font-body)' }}>
+      <div style={{ background: 'var(--color-surface)', borderRadius: '12px', boxShadow: '0 20px 60px rgba(31,42,55,0.12)', border: '1px solid var(--color-border)', width: '100%', maxWidth: '400px', padding: '2.5rem 2rem', textAlign: 'center' }}>
         {status === 'verifying' && (
           <>
             <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⏳</div>
-            <h2 style={{ marginBottom: '0.5rem' }}>Verifying your email…</h2>
-            <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Just a moment.</p>
+            <h2 style={{ marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)' }}>Verifying your email…</h2>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>Just a moment.</p>
           </>
         )}
 
         {status === 'success' && (
           <>
             <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>✅</div>
-            <h2 style={{ marginBottom: '0.5rem' }}>Email Verified</h2>
-            <p style={{ color: '#6b7280', fontSize: '0.9rem', marginBottom: '1.5rem' }}>{message}</p>
-            <Link to="/login" style={{ display: 'inline-block', padding: '0.7rem 1.5rem', background: '#1a3d6b', color: 'white', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+            <h2 style={{ marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)' }}>Email Verified</h2>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>{message}</p>
+            <Link to="/login" style={{ display: 'inline-block', padding: '0.7rem 1.5rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
               Go to Sign In
             </Link>
           </>
@@ -61,9 +61,9 @@ export default function VerifyEmail() {
         {status === 'error' && (
           <>
             <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⚠️</div>
-            <h2 style={{ marginBottom: '0.5rem' }}>Verification Failed</h2>
-            <p style={{ color: '#b91c1c', fontSize: '0.9rem', marginBottom: '1.5rem' }}>{message}</p>
-            <Link to="/login" style={{ display: 'inline-block', padding: '0.7rem 1.5rem', background: '#1a3d6b', color: 'white', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+            <h2 style={{ marginBottom: '0.5rem', fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)' }}>Verification Failed</h2>
+            <p style={{ color: 'var(--color-danger-text)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>{message}</p>
+            <Link to="/login" style={{ display: 'inline-block', padding: '0.7rem 1.5rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
               Back to Sign In
             </Link>
           </>

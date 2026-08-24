@@ -1,1 +1,42 @@
 @import "tailwindcss";
+
+/*
+  EEB design tokens — charcoal + gold, corporate/elegant direction.
+  Change the palette here and every page picks it up, since components
+  reference these vars instead of hardcoded hex.
+*/
+:root {
+  /* Surfaces */
+  --color-bg: #F7F5F0;          /* page background — warm off-white */
+  --color-surface: #FFFFFF;      /* cards, panels */
+  --color-surface-alt: #F1EEE6;  /* subtle secondary surface (table headers, hover) */
+
+  /* Brand */
+  --color-primary: #1F2A37;      /* charcoal — headers, dark UI, primary text on light */
+  --color-primary-dark: #141C26; /* hover/active state for charcoal elements */
+  --color-accent: #C9A15A;       /* gold — primary actions, highlights */
+  --color-accent-dark: #A9853F;  /* hover state for gold elements */
+  --color-on-accent: #1F2A37;    /* text/icon color when sitting on the gold accent */
+  --color-on-primary: #F4F1EA;   /* text/icon color when sitting on charcoal */
+
+  /* Text */
+  --color-text: #1F2A37;
+  --color-text-secondary: #5B5A56;
+  --color-text-muted: #8B887F;
+
+  /* Borders */
+  --color-border: #D8D5CC;
+  --color-border-strong: #C2BEB0;
+
+  /* Status */
+  --color-danger-bg: #FBEAE7;
+  --color-danger-text: #A13B2E;
+  --color-danger-border: #EFC9C0;
+  --color-success-bg: #EAF3E7;
+  --color-success-text: #3F6B3A;
+  --color-success-border: #C9DFC2;
+
+  /* Typography */
+  --font-heading: 'DM Serif Display', Georgia, serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+}

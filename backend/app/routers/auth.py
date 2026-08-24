@@ -8,6 +8,7 @@ import secrets
 from app.core.database import get_db
 from app.core.security import create_access_token, verify_password, get_password_hash
 from app.core.email import send_welcome_email, send_password_reset_email, send_verification_email
+from app.core.dependencies import require_roles
 from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserResponse, TokenResponse, ResetPasswordRequest
 
@@ -27,7 +28,30 @@ def _issue_verification_token(user: User) -> str:
 
 
 @router.post("/register", response_model=UserResponse)
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
+def register(
+    user_data: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("platform_super_admin")),
+):
+    """
+    Internal-only: creates a platform_admin or platform_super_admin
+    account. Merchant, employer, and employee accounts are created via
+    their own self-registration endpoints in routers/registration.py —
+    each of those creates the User row plus its matching
+    Employer/Merchant/EmployeeProfile row together, and starts PENDING
+    under the approval workflow, which this endpoint deliberately
+    bypasses (platform staff don't go through an approval queue).
+
+    Requires an existing platform_super_admin to call it — see
+    scripts/create_superadmin.py for how to create the very first one.
+    """
+    if user_data.role.value not in ("platform_admin", "platform_super_admin"):
+        raise HTTPException(
+            status_code=400,
+            detail="This endpoint only creates platform staff accounts. "
+                   "Use /register/employer, /register/merchant, or /register/employee instead.",
+        )
+
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -38,18 +62,17 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         phone=user_data.phone,
         hashed_password=get_password_hash(user_data.password),
         role=UserRole(user_data.role.value),
-        is_verified=False,
+        is_verified=True,  # platform staff created by a super admin don't need email verification
         email_valid=True,
     )
-    token = _issue_verification_token(new_user)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
     try:
-        send_verification_email(new_user.email, new_user.full_name, token)
+        send_welcome_email(new_user.email, new_user.full_name)
     except Exception as e:
-        print(f"[EMAIL] Verification email failed: {e}")
+        print(f"[EMAIL] Welcome email failed: {e}")
 
     return new_user
 
