@@ -93,7 +93,7 @@ export default function Faq() {
           Service.
         </p>
         <p style={{ marginTop: '1rem' }}>
-          <Link to="/about" style={{ color: 'var(--color-primary)', fontWeight: '600', textDecoration: 'none' }}>← Back to About EEB</Link>
+          <Link to="/" style={{ color: 'var(--color-primary)', fontWeight: '600', textDecoration: 'none' }}>← Back to Home</Link>
         </p>
       </div>
     </div>

@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import Header from './components/Header';
+import Footer from './components/Footer';
 import Login from './pages/Login';
 import VerifyEmail from './pages/VerifyEmail';
 import RegisterChoice from './pages/RegisterChoice';
@@ -10,25 +12,32 @@ import RegisterMerchant from './pages/RegisterMerchant';
 import RegisterEmployee from './pages/RegisterEmployee';
 import About from './pages/About';
 import Faq from './pages/Faq';
+import Contact from './pages/Contact';
+import Founder from './pages/Founder';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfUse from './pages/TermsOfUse';
+import CookiePolicy from './pages/CookiePolicy';
+import ComplaintsProcedure from './pages/ComplaintsProcedure';
 import AdminEmployerQueue from './pages/AdminEmployerQueue';
 import AdminMerchantQueue from './pages/AdminMerchantQueue';
 import AdminEmployeeQueue from './pages/AdminEmployeeQueue';
+import AdminMerchantSettlements from './pages/AdminMerchantSettlements';
 import EmployerEmployeeQueue from './pages/EmployerEmployeeQueue';
 import EmployerBillingCycles from './pages/EmployerBillingCycles';
 import MerchantCharge from './pages/MerchantCharge';
 import MerchantHistory from './pages/MerchantHistory';
 import MerchantSettlements from './pages/MerchantSettlements';
-import AdminMerchantSettlements from './pages/AdminMerchantSettlements';
 import EmployeePay from './pages/EmployeePay';
 import EmployeeBalance from './pages/EmployeeBalance';
 import EmployeeHistory from './pages/EmployeeHistory';
 import Profile from './pages/Profile';
 import Dashboard from './pages/Dashboard';
+import HomePage from './pages/HomePage';
 
 function AppContent() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<Login />} />
       {/* Password-reset links land on this same route — Login reads
           the ?token= param and switches to the reset view itself. */}
@@ -42,12 +51,27 @@ function AppContent() {
       {/* Public — no login required. */}
       <Route path="/about" element={<About />} />
       <Route path="/faq" element={<Faq />} />
+      <Route path="/contact" element={<Contact />} />
+      <Route path="/founder" element={<Founder />} />
+      <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+      <Route path="/legal/terms" element={<TermsOfUse />} />
+      <Route path="/legal/cookies" element={<CookiePolicy />} />
+      <Route path="/legal/complaints" element={<ComplaintsProcedure />} />
 
       <Route
         path="/dashboard"
         element={
           <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin', 'employer', 'merchant', 'employee']}>
             <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin', 'employer', 'merchant', 'employee']}>
+            <Profile />
           </ProtectedRoute>
         }
       />
@@ -75,6 +99,15 @@ function AppContent() {
         element={
           <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin']}>
             <AdminEmployeeQueue />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/merchant-settlements"
+        element={
+          <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin']}>
+            <AdminMerchantSettlements />
           </ProtectedRoute>
         }
       />
@@ -125,15 +158,6 @@ function AppContent() {
       />
 
       <Route
-        path="/admin/merchant-settlements"
-        element={
-          <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin']}>
-            <AdminMerchantSettlements />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
         path="/employee/pay"
         element={
           <ProtectedRoute allowedRoles={['employee']}>
@@ -160,15 +184,6 @@ function AppContent() {
         }
       />
 
-      <Route
-        path="/profile"
-        element={
-          <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin', 'employer', 'merchant', 'employee']}>
-            <Profile />
-          </ProtectedRoute>
-        }
-      />
-
       {/*
         Wildcard MUST stay last — React Router matches top-to-bottom and
         a "*" placed earlier silently swallows every route added below it.
@@ -184,7 +199,13 @@ function App() {
     <HelmetProvider>
       <BrowserRouter>
         <AuthProvider>
-          <AppContent />
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+            <Header />
+            <div style={{ flex: 1 }}>
+              <AppContent />
+            </div>
+            <Footer />
+          </div>
         </AuthProvider>
       </BrowserRouter>
     </HelmetProvider>
