@@ -44,12 +44,13 @@ export default function Footer() {
             <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
               © {new Date().getFullYear()} EEB. All rights reserved.
             </span>
+            {/*
             <button
               onClick={() => setShowFounderNote((v) => !v)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)', fontWeight: '600', fontSize: '0.78rem', padding: 0, display: 'flex', alignItems: 'center', gap: '0.3rem' }}
             >
               Founder's Note {showFounderNote ? '▴' : '▾'}
-            </button>
+            </button> */}
           </div>
 
           {showFounderNote && (
@@ -63,6 +64,7 @@ export default function Footer() {
               <Link to="/founder" style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: '600', textDecoration: 'none' }}>
                 Read the full story
               </Link>
+              
             </div>
           )}
         </div>

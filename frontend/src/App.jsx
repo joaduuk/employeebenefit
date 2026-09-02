@@ -13,7 +13,7 @@ import RegisterEmployee from './pages/RegisterEmployee';
 import About from './pages/About';
 import Faq from './pages/Faq';
 import Contact from './pages/Contact';
-import Founder from './pages/Founder';
+// import Founder from './pages/Founder';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfUse from './pages/TermsOfUse';
 import CookiePolicy from './pages/CookiePolicy';
@@ -52,7 +52,7 @@ function AppContent() {
       <Route path="/about" element={<About />} />
       <Route path="/faq" element={<Faq />} />
       <Route path="/contact" element={<Contact />} />
-      <Route path="/founder" element={<Founder />} />
+      {/* <Route path="/founder" element={<Founder />} /> */}
       <Route path="/legal/privacy" element={<PrivacyPolicy />} />
       <Route path="/legal/terms" element={<TermsOfUse />} />
       <Route path="/legal/cookies" element={<CookiePolicy />} />
