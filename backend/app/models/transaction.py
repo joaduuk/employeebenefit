@@ -23,6 +23,18 @@ class TransactionStatus(str, enum.Enum):
     EXPIRED = "expired"       # not approved within the QR/code TTL
 
 
+class TransactionPurchaseTag(str, enum.Enum):
+    """
+    A merchant-selected, coarse category tag for what was bought — purely
+    a memory-jogging aid for the merchant's own reconciliation later. Never
+    exposed to the employee (their-side schemas simply don't include it).
+    Deliberately generic, not a real receipt/line-item list.
+    """
+    FOOD_DRINKS = "food_drinks"
+    DAILY_ESSENTIALS = "daily_essentials"
+    MIXED = "mixed"  # includes alcohol/tobacco or a mix of categories
+
+
 def generate_transaction_code(length: int = 5) -> str:
     """5-digit random alphanumeric code, per the day-1 design notes."""
     alphabet = string.ascii_uppercase + string.digits
@@ -52,6 +64,11 @@ class Transaction(Base):
     # 5-digit alphanumeric code — used directly for MANUAL_CODE, and also
     # embedded in the QR payload as an extra check for the QR flow.
     transaction_code = Column(String(8), nullable=False, default=generate_transaction_code)
+
+    # Set by the merchant at creation time, before the code/QR is shown to
+    # the employee — a rough memory aid for reconciliation, not shown to
+    # the employee at any point.
+    purchase_tag = Column(SAEnum(TransactionPurchaseTag), nullable=True)
 
     # Raw QR payload (merchant ID, GPS, amount, timestamp, code) as JSON text,
     # kept for audit/debugging — nullable for MANUAL_CODE transactions.

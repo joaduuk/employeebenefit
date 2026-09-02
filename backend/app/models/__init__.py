@@ -11,7 +11,8 @@ from app.models.employer import Employer, PayrollFrequency
 from app.models.employee_profile import EmployeeProfile
 from app.models.merchant import Merchant, MerchantCategory
 from app.models.billing_cycle import BillingCycle, BillingCycleStatus
-from app.models.transaction import Transaction, TransactionMethod, TransactionStatus, generate_transaction_code
+from app.models.transaction import Transaction, TransactionMethod, TransactionStatus, TransactionPurchaseTag, generate_transaction_code
+from app.models.merchant_settlement import MerchantSettlement, MerchantSettlementStatus
 
 __all__ = [
     "ApplicationStatus", "ApprovalAuditMixin",
@@ -20,5 +21,6 @@ __all__ = [
     "EmployeeProfile",
     "Merchant", "MerchantCategory",
     "BillingCycle", "BillingCycleStatus",
-    "Transaction", "TransactionMethod", "TransactionStatus", "generate_transaction_code",
+    "Transaction", "TransactionMethod", "TransactionStatus", "TransactionPurchaseTag", "generate_transaction_code",
+    "MerchantSettlement", "MerchantSettlementStatus",
 ]

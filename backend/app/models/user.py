@@ -37,6 +37,13 @@ class User(Base):
     is_verified = Column(Boolean, default=False)
     email_valid = Column(Boolean, default=True)
 
+    # Optional profile photo — stored as just the filename (not a full path
+    # or URL), so the static-file mount location can change without a
+    # migration. NULL means no photo uploaded. Used across all roles, but
+    # only ever displayed back to a merchant for an EMPLOYEE, as a visual
+    # anti-fraud check ("does this match the person in front of me").
+    profile_photo_filename = Column(String, nullable=True)
+
     # Verification (email confirm)
     verification_token = Column(String, nullable=True)
     verification_token_expires = Column(DateTime, nullable=True)

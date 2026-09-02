@@ -7,8 +7,10 @@ from typing import List, Optional
 from app.core.database import get_db
 from app.core.dependencies import require_roles
 from app.models.merchant import Merchant
-from app.models.transaction import Transaction, TransactionStatus, TransactionMethod
+from app.models.employee_profile import EmployeeProfile
 from app.models.user import User
+from app.models.transaction import Transaction, TransactionStatus, TransactionMethod
+from app.models.merchant_settlement import MerchantSettlement
 from app.models.approval import ApplicationStatus
 from app.schemas.transaction import TransactionCreateRequest, TransactionView
 
@@ -27,16 +29,37 @@ def _get_own_merchant(current_user: User, db: Session) -> Merchant:
     return merchant
 
 
-def _to_view(txn: Transaction, merchant: Merchant) -> TransactionView:
+def _to_view(txn: Transaction, merchant: Merchant, db: Session) -> TransactionView:
+    employee_full_name = None
+    employee_work_email = None
+    employee_photo_url = None
+    if txn.employee_id:
+        row = (
+            db.query(EmployeeProfile, User)
+            .join(User, EmployeeProfile.user_id == User.id)
+            .filter(EmployeeProfile.id == txn.employee_id)
+            .first()
+        )
+        if row:
+            profile, user = row
+            employee_full_name = user.full_name
+            employee_work_email = profile.work_email
+            if user.profile_photo_filename:
+                employee_photo_url = f"/static/profile_photos/{user.profile_photo_filename}"
+
     return TransactionView(
         id=txn.id,
         merchant_id=txn.merchant_id,
         business_name=merchant.business_name,
         employee_id=txn.employee_id,
+        employee_full_name=employee_full_name,
+        employee_work_email=employee_work_email,
+        employee_photo_url=employee_photo_url,
         amount=txn.amount,
         method=txn.method,
         status=txn.status,
         transaction_code=txn.transaction_code,
+        purchase_tag=txn.purchase_tag,
         created_at=txn.created_at,
         approved_at=txn.approved_at,
         expires_at=txn.expires_at,
@@ -50,10 +73,11 @@ def create_transaction(
     current_user: User = Depends(require_roles("merchant")),
 ):
     """
-    Merchant enters an amount and gets back a transaction code (and, for
-    the QR method once built, a QR payload) to show the employee.
-    employee_id stays NULL until an employee looks the code up and
-    approves it — this endpoint only stages the transaction.
+    Merchant enters an amount, optionally taps a purchase_tag (their own
+    memory-jogging note — never shown to the employee), and gets back a
+    transaction code (and, for the QR method, a QR image on the frontend)
+    to show the employee. employee_id stays NULL until an employee looks
+    the code up and approves it — this endpoint only stages the transaction.
     """
     merchant = _get_own_merchant(current_user, db)
     if merchant.application_status != ApplicationStatus.APPROVED or not merchant.payments_enabled:
@@ -67,6 +91,7 @@ def create_transaction(
         employee_id=None,
         amount=payload.amount,
         method=payload.method,
+        purchase_tag=payload.purchase_tag,
         status=TransactionStatus.PENDING,
         merchant_latitude=merchant.latitude,
         merchant_longitude=merchant.longitude,
@@ -75,7 +100,7 @@ def create_transaction(
     db.add(txn)
     db.commit()
     db.refresh(txn)
-    return _to_view(txn, merchant)
+    return _to_view(txn, merchant, db)
 
 
 @router.get("/transactions", response_model=List[TransactionView])
@@ -89,7 +114,7 @@ def list_own_transactions(
     if status is not None:
         query = query.filter(Transaction.status == status)
     rows = query.order_by(Transaction.created_at.desc()).all()
-    return [_to_view(t, merchant) for t in rows]
+    return [_to_view(t, merchant, db) for t in rows]
 
 
 @router.get("/transactions/{transaction_id}", response_model=TransactionView)
@@ -100,7 +125,8 @@ def get_own_transaction(
 ):
     """
     Meant to be polled by the merchant screen while waiting for the
-    employee to approve or decline — no push/websocket layer yet.
+    employee to approve or decline — no push/websocket layer yet. Also
+    used for the history page's click-to-expand detail view.
     """
     merchant = _get_own_merchant(current_user, db)
     txn = (
@@ -118,4 +144,35 @@ def get_own_transaction(
         db.commit()
         db.refresh(txn)
 
-    return _to_view(txn, merchant)
+    return _to_view(txn, merchant, db)
+
+
+@router.get("/settlements")
+def list_own_settlements(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("merchant")),
+):
+    """
+    This merchant's monthly settlement batches — generated automatically
+    once a calendar month completes. PENDING means the total is confirmed
+    but not yet paid out; PAID means the platform has sent the transfer.
+    """
+    merchant = _get_own_merchant(current_user, db)
+    rows = (
+        db.query(MerchantSettlement)
+        .filter(MerchantSettlement.merchant_id == merchant.id)
+        .order_by(MerchantSettlement.period_year.desc(), MerchantSettlement.period_month.desc())
+        .all()
+    )
+    return [
+        {
+            "id": str(s.id),
+            "period_year": s.period_year,
+            "period_month": s.period_month,
+            "total_amount": str(s.total_amount),
+            "due_date": s.due_date.isoformat(),
+            "status": s.status.value,
+            "paid_at": s.paid_at.isoformat() if s.paid_at else None,
+        }
+        for s in rows
+    ]

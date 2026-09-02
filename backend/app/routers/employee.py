@@ -1,7 +1,8 @@
 # backend/app/routers/employee.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime
+from typing import List, Optional
 
 from app.core.database import get_db
 from app.core.dependencies import require_roles
@@ -10,8 +11,10 @@ from app.models.employer import Employer
 from app.models.merchant import Merchant
 from app.models.transaction import Transaction, TransactionStatus
 from app.models.user import User
-from app.schemas.transaction import TransactionLookupView, TransactionDecisionResponse, TransactionApprovalRequest
-from app.services.limits import check_transaction_allowed
+from app.schemas.transaction import TransactionLookupView, TransactionDecisionResponse, TransactionApprovalRequest, EmployeeTransactionView
+from app.schemas.employee import EmployeeBalanceView
+from app.services.limits import check_transaction_allowed, get_outstanding_balance
+from app.services.billing_cycles import get_or_create_open_cycle
 
 router = APIRouter(prefix="/employee", tags=["Employee — Transactions"])
 
@@ -37,6 +40,69 @@ def _get_pending_txn_by_code(code: str, db: Session) -> Transaction:
         db.commit()
         raise HTTPException(status_code=410, detail="This code has expired — ask the merchant for a new one")
     return txn
+
+
+@router.get("/balance", response_model=EmployeeBalanceView)
+def get_balance(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employee")),
+):
+    profile = _get_own_profile(current_user, db)
+    employer = db.query(Employer).filter(Employer.id == profile.employer_id).first()
+
+    spending_limit = profile.monthly_limit if profile.monthly_limit is not None else employer.default_employee_monthly_limit
+    outstanding = get_outstanding_balance(db, profile.id)
+    available = spending_limit - outstanding
+
+    cycle = get_or_create_open_cycle(db, employer)
+    db.commit()  # get_or_create_open_cycle may have created a new cycle row
+
+    return EmployeeBalanceView(
+        spending_limit=spending_limit,
+        outstanding=outstanding,
+        available=available,
+        max_transaction_amount=profile.max_transaction_amount,
+        daily_limit=profile.daily_limit,
+        weekly_limit=profile.weekly_limit,
+        current_cycle_period_end=cycle.period_end,
+        current_cycle_status=cycle.status.value,
+    )
+
+
+@router.get("/transactions", response_model=List[EmployeeTransactionView])
+def list_own_transactions(
+    status: Optional[TransactionStatus] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employee")),
+):
+    """
+    The employee's own purchase history — for recollection/reconciliation
+    if they need to check what they bought and when. Deliberately never
+    includes purchase_tag (see schema docstring) — that's the merchant's
+    own note, not shared back.
+    """
+    profile = _get_own_profile(current_user, db)
+    query = (
+        db.query(Transaction, Merchant)
+        .join(Merchant, Transaction.merchant_id == Merchant.id)
+        .filter(Transaction.employee_id == profile.id)
+    )
+    if status is not None:
+        query = query.filter(Transaction.status == status)
+    rows = query.order_by(Transaction.created_at.desc()).all()
+    return [
+        EmployeeTransactionView(
+            id=txn.id,
+            business_name=merchant.business_name,
+            amount=txn.amount,
+            method=txn.method,
+            status=txn.status,
+            transaction_code=txn.transaction_code,
+            created_at=txn.created_at,
+            approved_at=txn.approved_at,
+        )
+        for txn, merchant in rows
+    ]
 
 
 @router.get("/transactions/lookup/{code}", response_model=TransactionLookupView)
@@ -94,12 +160,12 @@ def approve_transaction(
         db.refresh(txn)
         return TransactionDecisionResponse(id=txn.id, status=txn.status, reason=reason)
 
+    cycle = get_or_create_open_cycle(db, employer)
+
     txn.employee_id = profile.id
     txn.status = TransactionStatus.APPROVED
     txn.approved_at = datetime.utcnow()
-    # billing_cycle_id is intentionally left NULL here — cycle assignment
-    # happens once BillingCycle creation/lookup logic exists; until then
-    # approved transactions are reconciled to a cycle after the fact.
+    txn.billing_cycle_id = cycle.id
     db.commit()
     db.refresh(txn)
 

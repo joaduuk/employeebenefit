@@ -38,6 +38,9 @@ export default function Dashboard() {
             <Link to="/admin/employees" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
               Review Employee Applications
             </Link>
+            <Link to="/admin/merchant-settlements" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+              Merchant Settlements
+            </Link>
           </div>
         )}
 
@@ -45,6 +48,9 @@ export default function Dashboard() {
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
             <Link to="/employer/employees" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
               Review My Employees
+            </Link>
+            <Link to="/employer/billing-cycles" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+              Billing Cycles
             </Link>
           </div>
         )}
@@ -54,6 +60,12 @@ export default function Dashboard() {
             <Link to="/merchant/charge" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
               Take a Payment
             </Link>
+            <Link to="/merchant/history" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+              Payment History
+            </Link>
+            <Link to="/merchant/settlements" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+              Settlements
+            </Link>
           </div>
         )}
 
@@ -62,8 +74,20 @@ export default function Dashboard() {
             <Link to="/employee/pay" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
               Pay with My Benefit
             </Link>
+            <Link to="/employee/balance" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+              My Balance
+            </Link>
+            <Link to="/employee/history" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+              Purchase History
+            </Link>
           </div>
         )}
+
+        <div style={{ marginBottom: '1rem' }}>
+          <Link to="/profile" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+            My Profile
+          </Link>
+        </div>
 
         <div>
           <button onClick={logout} style={{ padding: '0.5rem 1.25rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>

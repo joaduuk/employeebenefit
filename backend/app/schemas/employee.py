@@ -39,3 +39,19 @@ class EmployeeAdminView(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class EmployeeBalanceView(BaseModel):
+    """
+    What the employee sees about their own account — the spending limit,
+    what's currently outstanding (not yet cleared via payroll), and what's
+    left available to spend right now.
+    """
+    spending_limit: Decimal
+    outstanding: Decimal
+    available: Decimal
+    max_transaction_amount: Optional[Decimal] = None
+    daily_limit: Optional[Decimal] = None
+    weekly_limit: Optional[Decimal] = None
+    current_cycle_period_end: Optional[date] = None
+    current_cycle_status: Optional[str] = None

@@ -14,8 +14,15 @@ import AdminEmployerQueue from './pages/AdminEmployerQueue';
 import AdminMerchantQueue from './pages/AdminMerchantQueue';
 import AdminEmployeeQueue from './pages/AdminEmployeeQueue';
 import EmployerEmployeeQueue from './pages/EmployerEmployeeQueue';
+import EmployerBillingCycles from './pages/EmployerBillingCycles';
 import MerchantCharge from './pages/MerchantCharge';
+import MerchantHistory from './pages/MerchantHistory';
+import MerchantSettlements from './pages/MerchantSettlements';
+import AdminMerchantSettlements from './pages/AdminMerchantSettlements';
 import EmployeePay from './pages/EmployeePay';
+import EmployeeBalance from './pages/EmployeeBalance';
+import EmployeeHistory from './pages/EmployeeHistory';
+import Profile from './pages/Profile';
 import Dashboard from './pages/Dashboard';
 
 function AppContent() {
@@ -32,8 +39,7 @@ function AppContent() {
       <Route path="/register/merchant" element={<RegisterMerchant />} />
       <Route path="/register/employee" element={<RegisterEmployee />} />
 
-      {/* Public — no login required. Currently only linked from the
-          Login page; may move under a dedicated marketing site later. */}
+      {/* Public — no login required. */}
       <Route path="/about" element={<About />} />
       <Route path="/faq" element={<Faq />} />
 
@@ -83,6 +89,15 @@ function AppContent() {
       />
 
       <Route
+        path="/employer/billing-cycles"
+        element={
+          <ProtectedRoute allowedRoles={['employer']}>
+            <EmployerBillingCycles />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
         path="/merchant/charge"
         element={
           <ProtectedRoute allowedRoles={['merchant']}>
@@ -92,10 +107,64 @@ function AppContent() {
       />
 
       <Route
+        path="/merchant/history"
+        element={
+          <ProtectedRoute allowedRoles={['merchant']}>
+            <MerchantHistory />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/merchant/settlements"
+        element={
+          <ProtectedRoute allowedRoles={['merchant']}>
+            <MerchantSettlements />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/merchant-settlements"
+        element={
+          <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin']}>
+            <AdminMerchantSettlements />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
         path="/employee/pay"
         element={
           <ProtectedRoute allowedRoles={['employee']}>
             <EmployeePay />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/employee/balance"
+        element={
+          <ProtectedRoute allowedRoles={['employee']}>
+            <EmployeeBalance />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/employee/history"
+        element={
+          <ProtectedRoute allowedRoles={['employee']}>
+            <EmployeeHistory />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin', 'employer', 'merchant', 'employee']}>
+            <Profile />
           </ProtectedRoute>
         }
       />

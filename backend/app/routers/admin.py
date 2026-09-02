@@ -9,10 +9,12 @@ from app.core.dependencies import require_platform_staff
 from app.models.employer import Employer
 from app.models.merchant import Merchant
 from app.models.employee_profile import EmployeeProfile
+from app.models.merchant_settlement import MerchantSettlement, MerchantSettlementStatus
 from app.models.user import User
 from app.models.approval import ApplicationStatus
 from app.schemas.admin import EmployerAdminView, MerchantAdminView, ApprovalDecisionRequest, PayoutToggleRequest
 from app.schemas.employee import EmployeeAdminView, EmployeeApprovalRequest
+from app.schemas.merchant_settlement import MarkSettlementPaidRequest
 
 router = APIRouter(prefix="/admin", tags=["Admin — Approvals"])
 
@@ -447,3 +449,59 @@ def suspend_employee_override(
     user = db.query(User).filter(User.id == profile.user_id).first()
     employer = db.query(Employer).filter(Employer.id == profile.employer_id).first()
     return _to_employee_admin_view(profile, user, employer)
+
+
+# --- Merchant settlements oversight -----------------------------------
+# Merchants are paid BY the platform, so the "confirm this happened"
+# action belongs to platform staff, not the merchant — the mirror image
+# of the employer side, where the employer confirms deduction on
+# themselves. Settlements are generated automatically by
+# services/merchant_settlement_scheduler.py; these endpoints are for
+# oversight and marking a generated settlement as actually paid.
+
+@router.get("/merchant-settlements")
+def list_all_merchant_settlements(
+    status: Optional[MerchantSettlementStatus] = Query(None),
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    query = db.query(MerchantSettlement, Merchant).join(Merchant, MerchantSettlement.merchant_id == Merchant.id)
+    if status is not None:
+        query = query.filter(MerchantSettlement.status == status)
+    rows = query.order_by(MerchantSettlement.due_date.asc()).all()
+    return [
+        {
+            "id": str(s.id),
+            "merchant_id": str(s.merchant_id),
+            "business_name": m.business_name,
+            "period_year": s.period_year,
+            "period_month": s.period_month,
+            "total_amount": str(s.total_amount),
+            "due_date": s.due_date.isoformat(),
+            "status": s.status.value,
+            "paid_at": s.paid_at.isoformat() if s.paid_at else None,
+            "paid_reference": s.paid_reference,
+        }
+        for s, m in rows
+    ]
+
+
+@router.put("/merchant-settlements/{settlement_id}/mark-paid")
+def mark_settlement_paid(
+    settlement_id: str,
+    payload: MarkSettlementPaidRequest,
+    db: Session = Depends(get_db),
+    staff: User = Depends(require_platform_staff()),
+):
+    settlement = db.query(MerchantSettlement).filter(MerchantSettlement.id == settlement_id).first()
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Settlement not found")
+    if settlement.status == MerchantSettlementStatus.PAID:
+        raise HTTPException(status_code=400, detail="Already marked as paid")
+
+    settlement.status = MerchantSettlementStatus.PAID
+    settlement.paid_at = datetime.utcnow()
+    settlement.paid_reference = payload.paid_reference
+    db.commit()
+    db.refresh(settlement)
+    return {"id": str(settlement.id), "status": settlement.status.value}

@@ -2,10 +2,20 @@ import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import API from '../services/api';
 
+const API_ORIGIN = new URL(API.defaults.baseURL).origin;
+const fullPhotoUrl = (path) => (path ? `${API_ORIGIN}${path}` : null);
+
 const POLL_INTERVAL_MS = 3000;
+
+const PURCHASE_TAGS = [
+  { value: 'food_drinks', label: '🍽️ Food & Drinks' },
+  { value: 'daily_essentials', label: '🧴 Daily Essentials' },
+  { value: 'mixed', label: '🛒 Mixed (incl. Alcohol/Tobacco)' },
+];
 
 export default function MerchantCharge() {
   const [amount, setAmount] = useState('');
+  const [purchaseTag, setPurchaseTag] = useState(null);
   const [txn, setTxn] = useState(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
@@ -44,7 +54,11 @@ export default function MerchantCharge() {
     }
     setCreating(true);
     try {
-      const res = await API.post('/merchant/transactions', { amount: value, method: 'manual_code' });
+      const res = await API.post('/merchant/transactions', {
+        amount: value,
+        method: 'manual_code',
+        purchase_tag: purchaseTag,
+      });
       setTxn(res.data);
       startPolling(res.data.id);
     } catch (err) {
@@ -58,6 +72,7 @@ export default function MerchantCharge() {
     stopPolling();
     setTxn(null);
     setAmount('');
+    setPurchaseTag(null);
     setError(null);
   };
 
@@ -74,6 +89,18 @@ export default function MerchantCharge() {
           <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--color-success-text)', marginBottom: '1.5rem' }}>
             £{txn.amount}
           </div>
+          {txn.employee_photo_url && (
+            <div style={{ marginBottom: '1.5rem' }}>
+              <img
+                src={fullPhotoUrl(txn.employee_photo_url)}
+                alt="Employee"
+                style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--color-success-text)' }}
+              />
+              <p style={{ color: 'var(--color-success-text)', fontSize: '0.85rem', fontWeight: '600', marginTop: '0.5rem' }}>
+                {txn.employee_full_name} — check this matches the person in front of you
+              </p>
+            </div>
+          )}
           <p style={{ color: 'var(--color-success-text)', fontSize: '1.1rem', fontWeight: '600', marginBottom: '2rem' }}>
             You're clear to release the goods.
           </p>
@@ -134,6 +161,28 @@ export default function MerchantCharge() {
               placeholder="0.00"
               style={{ width: '100%', padding: '0.75rem', fontSize: '1.4rem', border: '1px solid var(--color-border)', borderRadius: '8px', boxSizing: 'border-box', marginBottom: '1rem' }}
             />
+
+            <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+              What's this for? (optional — for your own records, the customer never sees this)
+            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
+              {PURCHASE_TAGS.map((tag) => (
+                <button
+                  key={tag.value}
+                  type="button"
+                  onClick={() => setPurchaseTag(purchaseTag === tag.value ? null : tag.value)}
+                  style={{
+                    padding: '0.65rem 1rem', borderRadius: '8px', textAlign: 'left', cursor: 'pointer',
+                    border: purchaseTag === tag.value ? '2px solid var(--color-accent)' : '1px solid var(--color-border)',
+                    background: purchaseTag === tag.value ? 'var(--color-surface-alt)' : 'var(--color-surface)',
+                    fontWeight: purchaseTag === tag.value ? '700' : '500', color: 'var(--color-text)', fontSize: '0.9rem',
+                  }}
+                >
+                  {tag.label}
+                </button>
+              ))}
+            </div>
+
             {error && (
               <p style={{ color: 'var(--color-danger-text)', fontSize: '0.85rem', marginBottom: '1rem' }}>{error}</p>
             )}
