@@ -5,6 +5,7 @@ settings.EMAIL_ENABLED is true. Otherwise falls back to printing to the
 console, exactly like the original placeholder — so local development
 needs no real SMTP credentials and can never accidentally send real email.
 """
+import html
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -12,7 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from app.core.config import settings
 
 
-def _send(to_email: str, subject: str, html_body: str) -> None:
+def _send(to_email: str, subject: str, html_body: str, reply_to: str | None = None) -> None:
     if not settings.EMAIL_ENABLED:
         print(f"[EMAIL] (disabled — would send) → {to_email} | {subject}")
         print(html_body)
@@ -22,6 +23,8 @@ def _send(to_email: str, subject: str, html_body: str) -> None:
     msg["Subject"] = subject
     msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
     msg["To"] = to_email
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg.attach(MIMEText(html_body, "html"))
 
     # Port 465 = implicit SSL from the start of the connection (Hostinger's
@@ -86,3 +89,23 @@ def send_password_reset_email(to_email: str, full_name: str, token: str) -> None
         """,
     )
     _send(to_email, "Reset your EEB password", body)
+
+
+def send_contact_form_email(name: str, email: str, message: str) -> None:
+    """
+    Sent to EEB's own inbox (settings.SMTP_FROM_EMAIL), not to the person
+    who submitted the form — Reply-To is set to their address so replying
+    goes straight to them. name/message are HTML-escaped since they're
+    unauthenticated user input being embedded in an HTML email body.
+    """
+    safe_name = html.escape(name)
+    safe_message = html.escape(message).replace("\n", "<br>")
+    body = _wrap(
+        "New contact form submission",
+        f"""
+        <p><strong>From:</strong> {safe_name} ({html.escape(email)})</p>
+        <p><strong>Message:</strong></p>
+        <p style="white-space: pre-wrap; background: #F5F7F9; padding: 12px; border-radius: 6px;">{safe_message}</p>
+        """,
+    )
+    _send(settings.SMTP_FROM_EMAIL, f"New contact form message from {safe_name}", body, reply_to=email)
