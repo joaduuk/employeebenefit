@@ -1,22 +1,88 @@
 # backend/app/core/email.py
 """
-Placeholder email functions — mirrors the interface used in RoscaApp
-(app/core/email.py) so the auth router can call these directly.
-Wire up real SMTP/provider credentials here when ready; until then
-these just print to the console so the auth flow is testable locally.
+Sends real email via SMTP (Hostinger mailbox for admin@eebapp.com) when
+settings.EMAIL_ENABLED is true. Otherwise falls back to printing to the
+console, exactly like the original placeholder — so local development
+needs no real SMTP credentials and can never accidentally send real email.
 """
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 from app.core.config import settings
 
 
+def _send(to_email: str, subject: str, html_body: str) -> None:
+    if not settings.EMAIL_ENABLED:
+        print(f"[EMAIL] (disabled — would send) → {to_email} | {subject}")
+        print(html_body)
+        return
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
+    msg["To"] = to_email
+    msg.attach(MIMEText(html_body, "html"))
+
+    # Port 465 = implicit SSL from the start of the connection (Hostinger's
+    # setup). Port 587 = plain connection upgraded via STARTTLS instead —
+    # kept as a fallback in case the mailbox config ever changes.
+    if settings.SMTP_PORT == 465:
+        with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_FROM_EMAIL, [to_email], msg.as_string())
+    else:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            server.starttls()
+            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_FROM_EMAIL, [to_email], msg.as_string())
+
+
+def _wrap(title: str, body_html: str) -> str:
+    return f"""
+    <div style="font-family: Arial, Helvetica, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+      <h2 style="color: #1B3A5C; margin-top: 0;">{title}</h2>
+      {body_html}
+      <p style="color: #8A94A0; font-size: 0.8rem; margin-top: 32px; border-top: 1px solid #E5E9ED; padding-top: 16px;">
+        — The EEB Team
+      </p>
+    </div>
+    """
+
+
 def send_welcome_email(to_email: str, full_name: str) -> None:
-    print(f"[EMAIL] Welcome email → {to_email} ({full_name})")
+    body = _wrap(
+        f"Welcome, {full_name}!",
+        "<p>Your EEB account is ready. You can now sign in and get started.</p>",
+    )
+    _send(to_email, "Welcome to EEB", body)
 
 
 def send_verification_email(to_email: str, full_name: str, token: str) -> None:
     link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
-    print(f"[EMAIL] Verification email → {to_email}\nLink: {link}")
+    body = _wrap(
+        "Verify your email",
+        f"""
+        <p>Hi {full_name}, please confirm your email address to activate your EEB account.</p>
+        <p style="text-align: center; margin: 24px 0;">
+          <a href="{link}" style="background: #2F9E6E; color: #ffffff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">Verify Email</a>
+        </p>
+        <p style="color: #8A94A0; font-size: 0.8rem;">If the button doesn't work, copy and paste this link: {link}</p>
+        """,
+    )
+    _send(to_email, "Verify your EEB email address", body)
 
 
 def send_password_reset_email(to_email: str, full_name: str, token: str) -> None:
     link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
-    print(f"[EMAIL] Password reset email → {to_email}\nLink: {link}")
+    body = _wrap(
+        "Reset your password",
+        f"""
+        <p>Hi {full_name}, click below to reset your EEB password. This link expires in 1 hour.</p>
+        <p style="text-align: center; margin: 24px 0;">
+          <a href="{link}" style="background: #2F9E6E; color: #ffffff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">Reset Password</a>
+        </p>
+        <p style="color: #8A94A0; font-size: 0.8rem;">If you didn't request this, you can safely ignore this email.</p>
+        """,
+    )
+    _send(to_email, "Reset your EEB password", body)
