@@ -13,19 +13,14 @@ from app.models.user import User
 from app.models.approval import ApplicationStatus
 from app.models.billing_cycle import BillingCycle, BillingCycleStatus
 from app.schemas.employee import EmployeeAdminView, EmployeeApprovalRequest
-from app.services.billing_cycles import get_or_create_open_cycle
+from app.services.billing_cycles import get_or_create_open_cycle, close_cycle
 from app.services.payroll_export import get_cycle_deduction_breakdown, breakdown_to_csv, breakdown_to_json
+from app.services.audit import log_audit
 
-router = APIRouter(prefix="/employer", tags=["Employer"])
+router = APIRouter(prefix="/employer", tags=["Employer — Employee Approvals"])
 
 
 def _get_own_employer(current_user: User, db: Session) -> Employer:
-    """
-    Resolves the Employer row this employer-role user administers.
-    Role alone ("employer") isn't enough to scope access — this ties
-    every query below to that specific company so one employer admin
-    can never see or approve another employer's applicants.
-    """
     employer = db.query(Employer).filter(Employer.admin_user_id == current_user.id).first()
     if not employer:
         raise HTTPException(status_code=404, detail="No employer account found for this user")
@@ -33,11 +28,7 @@ def _get_own_employer(current_user: User, db: Session) -> Employer:
 
 
 def _get_own_cycle(cycle_id: str, employer: Employer, db: Session) -> BillingCycle:
-    cycle = (
-        db.query(BillingCycle)
-        .filter(BillingCycle.id == cycle_id, BillingCycle.employer_id == employer.id)
-        .first()
-    )
+    cycle = db.query(BillingCycle).filter(BillingCycle.id == cycle_id, BillingCycle.employer_id == employer.id).first()
     if not cycle:
         raise HTTPException(status_code=404, detail="Billing cycle not found")
     return cycle
@@ -67,8 +58,6 @@ def _to_employee_view(profile: EmployeeProfile, user: User, employer: Employer) 
         user_email=user.email,
     )
 
-
-# --- Employee approvals ------------------------------------------------
 
 @router.get("/employees", response_model=List[EmployeeAdminView])
 def list_own_employees(
@@ -114,12 +103,6 @@ def approve_employee(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employer")),
 ):
-    """
-    Sets both layers at once: application_status -> APPROVED, plus every
-    limit field from the form. Any limit left blank stays NULL on the
-    profile — the spending-check logic should read a NULL as "fall back
-    to Employer.default_employee_monthly_limit," not "unlimited."
-    """
     employer = _get_own_employer(current_user, db)
     profile = (
         db.query(EmployeeProfile)
@@ -139,6 +122,7 @@ def approve_employee(
     profile.reviewed_by_user_id = current_user.id
     profile.reviewed_at = datetime.utcnow()
     profile.decision_note = payload.decision_note
+    log_audit(db, current_user, "employee.approve", "employee_profile", profile.id, details=payload.decision_note)
     db.commit()
     db.refresh(profile)
 
@@ -166,6 +150,7 @@ def reject_employee(
     profile.reviewed_by_user_id = current_user.id
     profile.reviewed_at = datetime.utcnow()
     profile.decision_note = payload.decision_note
+    log_audit(db, current_user, "employee.reject", "employee_profile", profile.id, details=payload.decision_note)
     db.commit()
     db.refresh(profile)
 
@@ -195,6 +180,7 @@ def suspend_employee(
     profile.reviewed_by_user_id = current_user.id
     profile.reviewed_at = datetime.utcnow()
     profile.decision_note = payload.decision_note
+    log_audit(db, current_user, "employee.suspend", "employee_profile", profile.id, details=payload.decision_note)
     db.commit()
     db.refresh(profile)
 
@@ -202,18 +188,11 @@ def suspend_employee(
     return _to_employee_view(profile, user, employer)
 
 
-# --- Billing cycles / payroll deduction ---------------------------------
-
 @router.get("/billing-cycles")
 def list_billing_cycles(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employer")),
 ):
-    """
-    Every billing cycle for this employer, most recent first — including
-    the currently OPEN one. Ensures at least one OPEN cycle exists so the
-    list is never empty for a newly-approved employer.
-    """
     employer = _get_own_employer(current_user, db)
     get_or_create_open_cycle(db, employer)
     db.commit()
@@ -232,6 +211,9 @@ def list_billing_cycles(
             "period_end": c.period_end.isoformat(),
             "payroll_deduction_date": c.payroll_deduction_date.isoformat(),
             "status": c.status.value,
+            "employer_amount_expected": str(c.employer_amount_expected) if c.employer_amount_expected is not None else None,
+            "employer_amount_received": str(c.employer_amount_received) if c.employer_amount_received is not None else None,
+            "employer_paid_at": c.employer_paid_at.isoformat() if c.employer_paid_at else None,
         }
         for c in cycles
     ]
@@ -244,13 +226,6 @@ def download_deduction_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employer")),
 ):
-    """
-    Generates the per-employee payroll deduction file for this cycle on
-    demand — nothing is pre-generated or stored, so this always reflects
-    current data. Available for any cycle regardless of status, so an
-    employer can preview an OPEN cycle's running total, not just a
-    CLOSED one.
-    """
     employer = _get_own_employer(current_user, db)
     cycle = _get_own_cycle(cycle_id, employer, db)
     breakdown = get_cycle_deduction_breakdown(db, cycle, employer)
@@ -279,18 +254,13 @@ def close_cycle_now(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employer")),
 ):
-    """
-    Manual override so testing doesn't require waiting for the payroll
-    date or restarting the backend. Only valid on an OPEN cycle — in
-    normal operation this happens automatically via the scheduler once
-    payroll_deduction_date arrives (see services/payroll_scheduler.py).
-    """
     employer = _get_own_employer(current_user, db)
     cycle = _get_own_cycle(cycle_id, employer, db)
     if cycle.status != BillingCycleStatus.OPEN:
         raise HTTPException(status_code=400, detail="Only an OPEN cycle can be closed")
 
-    cycle.status = BillingCycleStatus.CLOSED
+    close_cycle(db, cycle)
+    log_audit(db, current_user, "billing_cycle.close_now", "billing_cycle", cycle.id, details=f"expected=£{cycle.employer_amount_expected}")
     db.commit()
     db.refresh(cycle)
     return {"id": str(cycle.id), "cycle_number": cycle.cycle_number, "status": cycle.status.value}
@@ -302,19 +272,13 @@ def confirm_payroll_deducted(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employer")),
 ):
-    """
-    The real "money has actually been deducted" confirmation — only valid
-    on a CLOSED cycle (i.e. its cutoff has passed and it's no longer
-    accepting new transactions). This is the status transition that
-    services/limits.py reads as "cleared" — employee outstanding balances
-    for this cycle drop to zero the next time their balance is checked.
-    """
     employer = _get_own_employer(current_user, db)
     cycle = _get_own_cycle(cycle_id, employer, db)
     if cycle.status != BillingCycleStatus.CLOSED:
         raise HTTPException(status_code=400, detail="Only a CLOSED cycle can be confirmed as payroll-deducted")
 
     cycle.status = BillingCycleStatus.PAYROLL_DEDUCTED
+    log_audit(db, current_user, "billing_cycle.confirm_payroll_deducted", "billing_cycle", cycle.id)
     db.commit()
     db.refresh(cycle)
     return {"id": str(cycle.id), "cycle_number": cycle.cycle_number, "status": cycle.status.value}

@@ -28,20 +28,43 @@ export default function Dashboard() {
         </p>
 
         {isPlatformStaff && (
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-            <Link to="/admin/employers" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
-              Review Employer Applications
-            </Link>
-            <Link to="/admin/merchants" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
-              Review Merchant Applications
-            </Link>
-            <Link to="/admin/employees" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
-              Review Employee Applications
-            </Link>
-            <Link to="/admin/merchant-settlements" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
-              Merchant Settlements
-            </Link>
-          </div>
+          <>
+            <p style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '1.5rem 0 0.5rem' }}>
+              Approvals
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              <Link to="/admin/employers" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+                Review Employer Applications
+              </Link>
+              <Link to="/admin/merchants" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+                Review Merchant Applications
+              </Link>
+              <Link to="/admin/employees" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+                Review Employee Applications
+              </Link>
+            </div>
+
+            <p style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '1.5rem 0 0.5rem' }}>
+              Money &amp; Oversight
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              <Link to="/admin/billing-cycles" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+                Employer Settlements
+              </Link>
+              <Link to="/admin/merchant-settlements" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+                Merchant Settlements
+              </Link>
+              <Link to="/admin/transactions" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+                Transactions
+              </Link>
+              <Link to="/admin/accounting" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+                Accounting Summary
+              </Link>
+              <Link to="/admin/audit-log" style={{ display: 'inline-block', padding: '0.5rem 1.25rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', textDecoration: 'none', fontWeight: '600' }}>
+                Audit Log
+              </Link>
+            </div>
+          </>
         )}
 
         {user?.role === 'employer' && (

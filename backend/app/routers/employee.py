@@ -15,6 +15,7 @@ from app.schemas.transaction import TransactionLookupView, TransactionDecisionRe
 from app.schemas.employee import EmployeeBalanceView
 from app.services.limits import check_transaction_allowed, get_outstanding_balance
 from app.services.billing_cycles import get_or_create_open_cycle
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/employee", tags=["Employee — Transactions"])
 
@@ -55,7 +56,7 @@ def get_balance(
     available = spending_limit - outstanding
 
     cycle = get_or_create_open_cycle(db, employer)
-    db.commit()  # get_or_create_open_cycle may have created a new cycle row
+    db.commit()
 
     return EmployeeBalanceView(
         spending_limit=spending_limit,
@@ -75,12 +76,6 @@ def list_own_transactions(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employee")),
 ):
-    """
-    The employee's own purchase history — for recollection/reconciliation
-    if they need to check what they bought and when. Deliberately never
-    includes purchase_tag (see schema docstring) — that's the merchant's
-    own note, not shared back.
-    """
     profile = _get_own_profile(current_user, db)
     query = (
         db.query(Transaction, Merchant)
@@ -111,11 +106,6 @@ def lookup_transaction(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("employee")),
 ):
-    """
-    Shows the employee what they're about to approve (merchant name,
-    amount) before they commit — deliberately doesn't run limit checks
-    here, only at actual approve time, so browsing a code has no side effects.
-    """
     txn = _get_pending_txn_by_code(code, db)
     merchant = db.query(Merchant).filter(Merchant.id == txn.merchant_id).first()
     return TransactionLookupView(
@@ -139,9 +129,6 @@ def approve_transaction(
     employer = db.query(Employer).filter(Employer.id == profile.employer_id).first()
     merchant = db.query(Merchant).filter(Merchant.id == txn.merchant_id).first()
 
-    # Captured regardless of outcome — not enforced yet. This is deliberately
-    # NOT part of check_transaction_allowed: it's audit/calibration data
-    # for a future proximity threshold, not a gate on approval today.
     if payload.latitude is not None:
         txn.employee_latitude = payload.latitude
     if payload.longitude is not None:
@@ -149,13 +136,9 @@ def approve_transaction(
 
     allowed, reason = check_transaction_allowed(db, profile, employer, merchant, txn.amount)
     if not allowed:
-        # A blocked limit is a real decision, not a "try again" state — the
-        # merchant's screen should update immediately rather than sit on
-        # "waiting" until the code eventually expires. The employee has to
-        # go back and ask the merchant to generate a fresh code if they
-        # still want to attempt a (smaller, or later) purchase.
         txn.employee_id = profile.id
         txn.status = TransactionStatus.DECLINED
+        log_audit(db, current_user, "transaction.declined_limit", "transaction", txn.id, details=reason)
         db.commit()
         db.refresh(txn)
         return TransactionDecisionResponse(id=txn.id, status=txn.status, reason=reason)
@@ -166,6 +149,7 @@ def approve_transaction(
     txn.status = TransactionStatus.APPROVED
     txn.approved_at = datetime.utcnow()
     txn.billing_cycle_id = cycle.id
+    log_audit(db, current_user, "transaction.approve", "transaction", txn.id, details=f"£{txn.amount}")
     db.commit()
     db.refresh(txn)
 
@@ -183,6 +167,7 @@ def decline_transaction(
 
     txn.employee_id = profile.id
     txn.status = TransactionStatus.DECLINED
+    log_audit(db, current_user, "transaction.decline", "transaction", txn.id)
     db.commit()
     db.refresh(txn)
 

@@ -33,6 +33,10 @@ import EmployeeHistory from './pages/EmployeeHistory';
 import Profile from './pages/Profile';
 import Dashboard from './pages/Dashboard';
 import HomePage from './pages/HomePage';
+import AdminBillingCycles from './pages/AdminBillingCycles';
+import AdminTransactions from './pages/AdminTransactions';
+import AdminAccounting from './pages/AdminAccounting';
+import AdminAuditLog from './pages/AdminAuditLog';
 
 function AppContent() {
   return (
@@ -111,7 +115,41 @@ function AppContent() {
           </ProtectedRoute>
         }
       />
+      <Route
+  path="/admin/billing-cycles"
+  element={
+    <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin']}>
+      <AdminBillingCycles />
+    </ProtectedRoute>
+  }
+/>
 
+<Route
+  path="/admin/transactions"
+  element={
+    <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin']}>
+      <AdminTransactions />
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/admin/accounting"
+  element={
+    <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin']}>
+      <AdminAccounting />
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/admin/audit-log"
+  element={
+    <ProtectedRoute allowedRoles={['platform_super_admin', 'platform_admin']}>
+      <AdminAuditLog />
+    </ProtectedRoute>
+  }
+/>
       <Route
         path="/employer/employees"
         element={

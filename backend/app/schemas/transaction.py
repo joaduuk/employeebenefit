@@ -14,26 +14,11 @@ class TransactionCreateRequest(BaseModel):
 
 
 class TransactionApprovalRequest(BaseModel):
-    """
-    Optional location captured at approval time. Not currently enforced —
-    stored for later calibration of a proximity threshold, not used to
-    block a purchase yet. Both fields optional since geolocation may be
-    denied or unavailable on the employee's device.
-    """
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
 
 class TransactionView(BaseModel):
-    """
-    The merchant's view of a transaction — includes purchase_tag (merchant's
-    own memory-jogging tag, never shown to the employee) and counterparty
-    details once an employee has actually engaged with it (approved or
-    declined), including employee_photo_url — a visual anti-fraud check so
-    the merchant can confirm the person approving matches their profile
-    photo. All employee fields stay None while status is PENDING or
-    EXPIRED, since employee_id is only set once someone acts on the code.
-    """
     id: UUID4
     merchant_id: UUID4
     business_name: str
@@ -55,12 +40,6 @@ class TransactionView(BaseModel):
 
 
 class TransactionLookupView(BaseModel):
-    """
-    What the employee sees before deciding to approve — deliberately
-    thin (no merchant bank details, no internal IDs beyond what's needed,
-    and never purchase_tag — that's the merchant's own note) since this
-    is looked up by a shared code, not an authenticated per-transaction link.
-    """
     id: UUID4
     business_name: str
     amount: Decimal
@@ -69,11 +48,6 @@ class TransactionLookupView(BaseModel):
 
 
 class EmployeeTransactionView(BaseModel):
-    """
-    The employee's own purchase history view — merchant name and timing,
-    deliberately never includes purchase_tag (that's the merchant's own
-    reconciliation note, not something shown back to the employee).
-    """
     id: UUID4
     business_name: str
     amount: Decimal
@@ -87,7 +61,28 @@ class EmployeeTransactionView(BaseModel):
         from_attributes = True
 
 
+class AdminTransactionView(BaseModel):
+    """
+    Platform-wide view for oversight and dispute marking — spans every
+    merchant and employer, unlike the merchant/employee-scoped views above.
+    """
+    id: UUID4
+    amount: Decimal
+    status: TransactionStatus
+    transaction_code: str
+    business_name: str
+    employee_full_name: Optional[str] = None
+    employer_company_name: Optional[str] = None
+    billing_cycle_status: Optional[str] = None
+    is_disputed: bool
+    dispute_reason: Optional[str] = None
+    disputed_at: Optional[datetime] = None
+    dispute_resolved_at: Optional[datetime] = None
+    created_at: datetime
+    approved_at: Optional[datetime] = None
+
+
 class TransactionDecisionResponse(BaseModel):
     id: UUID4
     status: TransactionStatus
-    reason: Optional[str] = None  # populated when a limit check blocks approval
+    reason: Optional[str] = None

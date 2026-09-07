@@ -5,38 +5,31 @@ import secrets
 import string
 from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime, Enum as SAEnum, Numeric, Float, ForeignKey, Text
+from sqlalchemy import Column, String, DateTime, Enum as SAEnum, Numeric, Float, ForeignKey, Text, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
 
 
 class TransactionMethod(str, enum.Enum):
-    QR = "qr"                 # dynamic QR scanned by employee
-    MANUAL_CODE = "manual_code"  # merchant displays a code, employee types it in
+    QR = "qr"
+    MANUAL_CODE = "manual_code"
 
 
 class TransactionStatus(str, enum.Enum):
-    PENDING = "pending"       # code/QR generated, awaiting employee approval
+    PENDING = "pending"
     APPROVED = "approved"
-    DECLINED = "declined"     # employee explicitly rejected
-    EXPIRED = "expired"       # not approved within the QR/code TTL
+    DECLINED = "declined"
+    EXPIRED = "expired"
 
 
 class TransactionPurchaseTag(str, enum.Enum):
-    """
-    A merchant-selected, coarse category tag for what was bought — purely
-    a memory-jogging aid for the merchant's own reconciliation later. Never
-    exposed to the employee (their-side schemas simply don't include it).
-    Deliberately generic, not a real receipt/line-item list.
-    """
     FOOD_DRINKS = "food_drinks"
     DAILY_ESSENTIALS = "daily_essentials"
-    MIXED = "mixed"  # includes alcohol/tobacco or a mix of categories
+    MIXED = "mixed"
 
 
 def generate_transaction_code(length: int = 5) -> str:
-    """5-digit random alphanumeric code, per the day-1 design notes."""
     alphabet = string.ascii_uppercase + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
@@ -46,41 +39,31 @@ class Transaction(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
-    # Nullable: a merchant generates a transaction before any employee has
-    # claimed it — employee_id is only set once someone looks up the code
-    # and approves (or declines) it. NOT set at creation time.
     employee_id = Column(UUID(as_uuid=True), ForeignKey("employee_profiles.id"), nullable=True)
     merchant_id = Column(UUID(as_uuid=True), ForeignKey("merchants.id"), nullable=False)
-
-    # Assigned once the transaction is approved and falls into a cycle
-    # (nullable because it isn't known at creation time — assigned at
-    # approval based on which employer cycle is currently OPEN).
     billing_cycle_id = Column(UUID(as_uuid=True), ForeignKey("billing_cycles.id"), nullable=True)
 
     amount = Column(Numeric(10, 2), nullable=False)
     method = Column(SAEnum(TransactionMethod), nullable=False)
     status = Column(SAEnum(TransactionStatus), nullable=False, default=TransactionStatus.PENDING)
 
-    # 5-digit alphanumeric code — used directly for MANUAL_CODE, and also
-    # embedded in the QR payload as an extra check for the QR flow.
     transaction_code = Column(String(8), nullable=False, default=generate_transaction_code)
-
-    # Set by the merchant at creation time, before the code/QR is shown to
-    # the employee — a rough memory aid for reconciliation, not shown to
-    # the employee at any point.
     purchase_tag = Column(SAEnum(TransactionPurchaseTag), nullable=True)
-
-    # Raw QR payload (merchant ID, GPS, amount, timestamp, code) as JSON text,
-    # kept for audit/debugging — nullable for MANUAL_CODE transactions.
     qr_payload = Column(Text, nullable=True)
 
-    # Location captured at approval time, for the employee-location-must-
-    # match-merchant-location check described in the design notes.
     merchant_latitude = Column(Float, nullable=True)
     merchant_longitude = Column(Float, nullable=True)
     employee_latitude = Column(Float, nullable=True)
     employee_longitude = Column(Float, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)   # when merchant generated the code/QR
+    # --- Dispute tracking, added for accounting/audit reporting ---
+    # Platform-admin-marked for now (no self-service dispute submission
+    # yet) — a simple flag + reason, not a full dispute workflow.
+    is_disputed = Column(Boolean, nullable=False, default=False)
+    dispute_reason = Column(Text, nullable=True)
+    disputed_at = Column(DateTime, nullable=True)
+    dispute_resolved_at = Column(DateTime, nullable=True)  # NULL = still open
+
+    created_at = Column(DateTime, default=datetime.utcnow)
     approved_at = Column(DateTime, nullable=True)
-    expires_at = Column(DateTime, nullable=True)             # created_at + DYNAMIC_QR_TTL_SECONDS
+    expires_at = Column(DateTime, nullable=True)

@@ -13,6 +13,8 @@ from app.models.merchant import Merchant, MerchantCategory
 from app.models.billing_cycle import BillingCycle, BillingCycleStatus
 from app.models.transaction import Transaction, TransactionMethod, TransactionStatus, TransactionPurchaseTag, generate_transaction_code
 from app.models.merchant_settlement import MerchantSettlement, MerchantSettlementStatus
+from app.models.audit_log import AuditLog
+from app.models.cash_position import CashPositionEntry
 
 __all__ = [
     "ApplicationStatus", "ApprovalAuditMixin",
@@ -23,4 +25,6 @@ __all__ = [
     "BillingCycle", "BillingCycleStatus",
     "Transaction", "TransactionMethod", "TransactionStatus", "TransactionPurchaseTag", "generate_transaction_code",
     "MerchantSettlement", "MerchantSettlementStatus",
+    "AuditLog",
+    "CashPositionEntry",
 ]

@@ -1,7 +1,7 @@
 # backend/app/routers/admin.py
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Optional
 
 from app.core.database import get_db
@@ -10,11 +10,22 @@ from app.models.employer import Employer
 from app.models.merchant import Merchant
 from app.models.employee_profile import EmployeeProfile
 from app.models.merchant_settlement import MerchantSettlement, MerchantSettlementStatus
+from app.models.billing_cycle import BillingCycle, BillingCycleStatus
+from app.models.transaction import Transaction, TransactionStatus
+from app.models.audit_log import AuditLog
+from app.models.cash_position import CashPositionEntry
 from app.models.user import User
 from app.models.approval import ApplicationStatus
 from app.schemas.admin import EmployerAdminView, MerchantAdminView, ApprovalDecisionRequest, PayoutToggleRequest
 from app.schemas.employee import EmployeeAdminView, EmployeeApprovalRequest
 from app.schemas.merchant_settlement import MarkSettlementPaidRequest
+from app.schemas.transaction import AdminTransactionView
+from app.schemas.accounting import (
+    DisputeRequest, EmployerPaymentConfirmRequest, CashPositionCreateRequest,
+    CashPositionView, AccountingSummaryView, AuditLogView, EmployerArrearsView,
+)
+from app.services.accounting import get_accounting_summary, get_employer_arrears
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/admin", tags=["Admin — Approvals"])
 
@@ -83,6 +94,7 @@ def approve_employer(
     employer.reviewed_by_user_id = staff.id
     employer.reviewed_at = datetime.utcnow()
     employer.decision_note = payload.decision_note
+    log_audit(db, staff, "employer.approve", "employer", employer.id, details=payload.decision_note)
     db.commit()
     db.refresh(employer)
 
@@ -106,6 +118,7 @@ def reject_employer(
     employer.reviewed_by_user_id = staff.id
     employer.reviewed_at = datetime.utcnow()
     employer.decision_note = payload.decision_note
+    log_audit(db, staff, "employer.reject", "employer", employer.id, details=payload.decision_note)
     db.commit()
     db.refresh(employer)
 
@@ -120,11 +133,6 @@ def suspend_employer(
     db: Session = Depends(get_db),
     staff: User = Depends(require_platform_staff()),
 ):
-    """
-    Pauses an already-approved employer (e.g. a billing dispute) without
-    treating them as rejected — distinct status from REJECTED, per the
-    two-layer approval design.
-    """
     employer = db.query(Employer).filter(Employer.id == employer_id).first()
     if not employer:
         raise HTTPException(status_code=404, detail="Employer not found")
@@ -136,6 +144,7 @@ def suspend_employer(
     employer.reviewed_by_user_id = staff.id
     employer.reviewed_at = datetime.utcnow()
     employer.decision_note = payload.decision_note
+    log_audit(db, staff, "employer.suspend", "employer", employer.id, details=payload.decision_note)
     db.commit()
     db.refresh(employer)
 
@@ -203,12 +212,6 @@ def approve_merchant(
     db: Session = Depends(get_db),
     staff: User = Depends(require_platform_staff()),
 ):
-    """
-    Approves the merchant as a business and turns payments on. Payouts
-    are deliberately NOT enabled here — a merchant can be an approved
-    business while payouts stay off until their bank account is
-    separately verified (see toggle_payouts below).
-    """
     merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
     if not merchant:
         raise HTTPException(status_code=404, detail="Merchant not found")
@@ -218,6 +221,7 @@ def approve_merchant(
     merchant.reviewed_by_user_id = staff.id
     merchant.reviewed_at = datetime.utcnow()
     merchant.decision_note = payload.decision_note
+    log_audit(db, staff, "merchant.approve", "merchant", merchant.id, details=payload.decision_note)
     db.commit()
     db.refresh(merchant)
 
@@ -242,6 +246,7 @@ def reject_merchant(
     merchant.reviewed_by_user_id = staff.id
     merchant.reviewed_at = datetime.utcnow()
     merchant.decision_note = payload.decision_note
+    log_audit(db, staff, "merchant.reject", "merchant", merchant.id, details=payload.decision_note)
     db.commit()
     db.refresh(merchant)
 
@@ -268,6 +273,7 @@ def suspend_merchant(
     merchant.reviewed_by_user_id = staff.id
     merchant.reviewed_at = datetime.utcnow()
     merchant.decision_note = payload.decision_note
+    log_audit(db, staff, "merchant.suspend", "merchant", merchant.id, details=payload.decision_note)
     db.commit()
     db.refresh(merchant)
 
@@ -282,11 +288,6 @@ def toggle_merchant_payouts(
     db: Session = Depends(get_db),
     staff: User = Depends(require_platform_staff()),
 ):
-    """
-    Independent lever from application approval — e.g. flip this on once
-    the merchant's bank account details have been verified, without
-    touching their application_status at all.
-    """
     merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
     if not merchant:
         raise HTTPException(status_code=404, detail="Merchant not found")
@@ -298,6 +299,7 @@ def toggle_merchant_payouts(
     merchant.reviewed_at = datetime.utcnow()
     if payload.decision_note:
         merchant.decision_note = payload.decision_note
+    log_audit(db, staff, "merchant.toggle_payouts", "merchant", merchant.id, details=f"enabled={payload.enabled}")
     db.commit()
     db.refresh(merchant)
 
@@ -306,9 +308,6 @@ def toggle_merchant_payouts(
 
 
 # --- Platform-staff override of employee approvals -------------------------
-# Employees are normally approved by their own employer (see routers/employer.py).
-# These endpoints let platform staff step in on any employer's applicants —
-# same shape as the employer-side ones, just not scoped to a single employer.
 
 def _to_employee_admin_view(profile: EmployeeProfile, user: User, employer: Employer) -> EmployeeAdminView:
     return EmployeeAdminView(
@@ -395,6 +394,7 @@ def approve_employee_override(
     profile.reviewed_by_user_id = staff.id
     profile.reviewed_at = datetime.utcnow()
     profile.decision_note = payload.decision_note
+    log_audit(db, staff, "employee.approve_override", "employee_profile", profile.id, details=payload.decision_note)
     db.commit()
     db.refresh(profile)
 
@@ -418,6 +418,7 @@ def reject_employee_override(
     profile.reviewed_by_user_id = staff.id
     profile.reviewed_at = datetime.utcnow()
     profile.decision_note = payload.decision_note
+    log_audit(db, staff, "employee.reject_override", "employee_profile", profile.id, details=payload.decision_note)
     db.commit()
     db.refresh(profile)
 
@@ -443,6 +444,7 @@ def suspend_employee_override(
     profile.reviewed_by_user_id = staff.id
     profile.reviewed_at = datetime.utcnow()
     profile.decision_note = payload.decision_note
+    log_audit(db, staff, "employee.suspend_override", "employee_profile", profile.id, details=payload.decision_note)
     db.commit()
     db.refresh(profile)
 
@@ -452,12 +454,6 @@ def suspend_employee_override(
 
 
 # --- Merchant settlements oversight -----------------------------------
-# Merchants are paid BY the platform, so the "confirm this happened"
-# action belongs to platform staff, not the merchant — the mirror image
-# of the employer side, where the employer confirms deduction on
-# themselves. Settlements are generated automatically by
-# services/merchant_settlement_scheduler.py; these endpoints are for
-# oversight and marking a generated settlement as actually paid.
 
 @router.get("/merchant-settlements")
 def list_all_merchant_settlements(
@@ -502,6 +498,279 @@ def mark_settlement_paid(
     settlement.status = MerchantSettlementStatus.PAID
     settlement.paid_at = datetime.utcnow()
     settlement.paid_reference = payload.paid_reference
+    log_audit(db, staff, "merchant_settlement.mark_paid", "merchant_settlement", settlement.id, details=f"£{settlement.total_amount} ref={payload.paid_reference}")
     db.commit()
     db.refresh(settlement)
     return {"id": str(settlement.id), "status": settlement.status.value}
+
+
+# --- Billing cycle oversight + employer-paid confirmation ----------------
+# Mirrors the merchant-settlement asymmetry: the employer confirms their
+# OWN payroll deduction (routers/employer.py), but PLATFORM staff confirm
+# when EEB actually receives that money, since it's EEB's own bank
+# account receiving the payment.
+
+@router.get("/billing-cycles")
+def list_all_billing_cycles(
+    status: Optional[BillingCycleStatus] = Query(None),
+    employer_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    query = db.query(BillingCycle, Employer).join(Employer, BillingCycle.employer_id == Employer.id)
+    if status is not None:
+        query = query.filter(BillingCycle.status == status)
+    if employer_id is not None:
+        query = query.filter(BillingCycle.employer_id == employer_id)
+    rows = query.order_by(BillingCycle.payroll_deduction_date.asc()).all()
+    return [
+        {
+            "id": str(c.id),
+            "employer_id": str(c.employer_id),
+            "employer_company_name": e.company_name,
+            "cycle_number": c.cycle_number,
+            "period_start": c.period_start.isoformat(),
+            "period_end": c.period_end.isoformat(),
+            "payroll_deduction_date": c.payroll_deduction_date.isoformat(),
+            "status": c.status.value,
+            "employer_amount_expected": str(c.employer_amount_expected) if c.employer_amount_expected is not None else None,
+            "employer_amount_received": str(c.employer_amount_received) if c.employer_amount_received is not None else None,
+            "employer_paid_at": c.employer_paid_at.isoformat() if c.employer_paid_at else None,
+            "employer_paid_reference": c.employer_paid_reference,
+        }
+        for c, e in rows
+    ]
+
+
+@router.put("/billing-cycle/{cycle_id}/confirm-employer-paid")
+def confirm_employer_paid(
+    cycle_id: str,
+    payload: EmployerPaymentConfirmRequest,
+    db: Session = Depends(get_db),
+    staff: User = Depends(require_platform_staff()),
+):
+    cycle = db.query(BillingCycle).filter(BillingCycle.id == cycle_id).first()
+    if not cycle:
+        raise HTTPException(status_code=404, detail="Billing cycle not found")
+    if cycle.status != BillingCycleStatus.PAYROLL_DEDUCTED:
+        raise HTTPException(status_code=400, detail="Only a cycle marked PAYROLL_DEDUCTED can be confirmed as employer-paid")
+
+    shortfall = None
+    if cycle.employer_amount_expected is not None and payload.amount_received < cycle.employer_amount_expected:
+        shortfall = cycle.employer_amount_expected - payload.amount_received
+
+    cycle.status = BillingCycleStatus.EMPLOYER_PAID
+    cycle.employer_amount_received = payload.amount_received
+    cycle.employer_paid_at = datetime.utcnow()
+    cycle.employer_paid_reference = payload.payment_reference
+
+    details = f"received=£{payload.amount_received} reference={payload.payment_reference}"
+    if shortfall is not None:
+        details += f" SHORTFALL=£{shortfall}"
+    log_audit(db, staff, "billing_cycle.confirm_employer_paid", "billing_cycle", cycle.id, details=details)
+
+    db.commit()
+    db.refresh(cycle)
+    return {
+        "id": str(cycle.id),
+        "cycle_number": cycle.cycle_number,
+        "status": cycle.status.value,
+        "shortfall": str(shortfall) if shortfall is not None else None,
+    }
+
+
+@router.get("/accounting/employer-arrears", response_model=List[EmployerArrearsView])
+def list_employer_arrears(
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    return get_employer_arrears(db)
+
+
+# --- Transaction oversight + dispute marking ------------------------------
+
+@router.get("/transactions", response_model=List[AdminTransactionView])
+def list_all_transactions(
+    is_disputed: Optional[bool] = Query(None),
+    status: Optional[TransactionStatus] = Query(None),
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    query = db.query(Transaction)
+    if is_disputed is not None:
+        query = query.filter(Transaction.is_disputed == is_disputed)
+    if status is not None:
+        query = query.filter(Transaction.status == status)
+    rows = query.order_by(Transaction.created_at.desc()).limit(500).all()
+
+    results = []
+    for txn in rows:
+        merchant = db.query(Merchant).filter(Merchant.id == txn.merchant_id).first()
+        employee_name = None
+        employer_name = None
+        if txn.employee_id:
+            row = (
+                db.query(EmployeeProfile, User, Employer)
+                .join(User, EmployeeProfile.user_id == User.id)
+                .join(Employer, EmployeeProfile.employer_id == Employer.id)
+                .filter(EmployeeProfile.id == txn.employee_id)
+                .first()
+            )
+            if row:
+                _profile, user, employer = row
+                employee_name = user.full_name
+                employer_name = employer.company_name
+        cycle_status = None
+        if txn.billing_cycle_id:
+            cycle = db.query(BillingCycle).filter(BillingCycle.id == txn.billing_cycle_id).first()
+            if cycle:
+                cycle_status = cycle.status.value
+
+        results.append(AdminTransactionView(
+            id=txn.id,
+            amount=txn.amount,
+            status=txn.status,
+            transaction_code=txn.transaction_code,
+            business_name=merchant.business_name if merchant else "Unknown",
+            employee_full_name=employee_name,
+            employer_company_name=employer_name,
+            billing_cycle_status=cycle_status,
+            is_disputed=txn.is_disputed,
+            dispute_reason=txn.dispute_reason,
+            disputed_at=txn.disputed_at,
+            dispute_resolved_at=txn.dispute_resolved_at,
+            created_at=txn.created_at,
+            approved_at=txn.approved_at,
+        ))
+    return results
+
+
+@router.put("/transactions/{transaction_id}/mark-disputed")
+def mark_transaction_disputed(
+    transaction_id: str,
+    payload: DisputeRequest,
+    db: Session = Depends(get_db),
+    staff: User = Depends(require_platform_staff()),
+):
+    txn = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    txn.is_disputed = True
+    txn.dispute_reason = payload.reason
+    txn.disputed_at = datetime.utcnow()
+    txn.dispute_resolved_at = None
+    log_audit(db, staff, "transaction.mark_disputed", "transaction", txn.id, details=payload.reason)
+    db.commit()
+    db.refresh(txn)
+    return {"id": str(txn.id), "is_disputed": txn.is_disputed}
+
+
+@router.put("/transactions/{transaction_id}/resolve-dispute")
+def resolve_transaction_dispute(
+    transaction_id: str,
+    db: Session = Depends(get_db),
+    staff: User = Depends(require_platform_staff()),
+):
+    txn = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if not txn.is_disputed:
+        raise HTTPException(status_code=400, detail="This transaction isn't currently disputed")
+
+    txn.dispute_resolved_at = datetime.utcnow()
+    log_audit(db, staff, "transaction.resolve_dispute", "transaction", txn.id)
+    db.commit()
+    db.refresh(txn)
+    return {"id": str(txn.id), "dispute_resolved_at": txn.dispute_resolved_at.isoformat()}
+
+
+# --- Accounting summary + cash position (bank reconciliation) ------------
+
+@router.get("/accounting/summary", response_model=AccountingSummaryView)
+def accounting_summary(
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    return get_accounting_summary(db)
+
+
+@router.post("/accounting/cash-position", response_model=CashPositionView)
+def record_cash_position(
+    payload: CashPositionCreateRequest,
+    db: Session = Depends(get_db),
+    staff: User = Depends(require_platform_staff()),
+):
+    entry = CashPositionEntry(
+        recorded_date=payload.recorded_date or date.today(),
+        bank_balance=payload.bank_balance,
+        notes=payload.notes,
+        recorded_by_user_id=staff.id,
+    )
+    db.add(entry)
+    log_audit(db, staff, "cash_position.record", "cash_position_entry", None, details=f"£{payload.bank_balance} on {entry.recorded_date}")
+    db.commit()
+    db.refresh(entry)
+    return CashPositionView(
+        id=str(entry.id),
+        recorded_date=entry.recorded_date,
+        bank_balance=entry.bank_balance,
+        notes=entry.notes,
+        recorded_by_email=staff.email,
+        created_at=entry.created_at,
+    )
+
+
+@router.get("/accounting/cash-position/history", response_model=List[CashPositionView])
+def cash_position_history(
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    rows = (
+        db.query(CashPositionEntry, User)
+        .join(User, CashPositionEntry.recorded_by_user_id == User.id)
+        .order_by(CashPositionEntry.recorded_date.desc(), CashPositionEntry.created_at.desc())
+        .limit(90)
+        .all()
+    )
+    return [
+        CashPositionView(
+            id=str(e.id),
+            recorded_date=e.recorded_date,
+            bank_balance=e.bank_balance,
+            notes=e.notes,
+            recorded_by_email=u.email,
+            created_at=e.created_at,
+        )
+        for e, u in rows
+    ]
+
+
+# --- Audit log -------------------------------------------------------------
+
+@router.get("/audit-log", response_model=List[AuditLogView])
+def list_audit_log(
+    action: Optional[str] = Query(None),
+    entity_type: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    query = db.query(AuditLog)
+    if action is not None:
+        query = query.filter(AuditLog.action == action)
+    if entity_type is not None:
+        query = query.filter(AuditLog.entity_type == entity_type)
+    rows = query.order_by(AuditLog.created_at.desc()).limit(300).all()
+    return [
+        AuditLogView(
+            id=str(a.id),
+            actor_email=a.actor_email,
+            actor_role=a.actor_role,
+            action=a.action,
+            entity_type=a.entity_type,
+            entity_id=a.entity_id,
+            details=a.details,
+            created_at=a.created_at,
+        )
+        for a in rows
+    ]

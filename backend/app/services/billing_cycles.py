@@ -1,10 +1,13 @@
 # backend/app/services/billing_cycles.py
 import calendar
 from datetime import date, timedelta
+from decimal import Decimal
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.billing_cycle import BillingCycle, BillingCycleStatus
 from app.models.employer import Employer, PayrollFrequency
+from app.models.transaction import Transaction, TransactionStatus
 
 
 def _clamp_day(year: int, month: int, day: int) -> date:
@@ -42,16 +45,13 @@ def _next_weekday_date(weekday: int, after: date) -> date:
 def _compute_payroll_deduction_date(employer: Employer, after: date) -> date:
     if employer.payroll_frequency == PayrollFrequency.MONTHLY:
         return _next_monthly_date(employer.payroll_day, after)
-    # WEEKLY and FORTNIGHTLY both use next-weekday for now — see docstring above.
     return _next_weekday_date(employer.payroll_day, after)
 
 
 def get_or_create_open_cycle(db: Session, employer: Employer) -> BillingCycle:
     """
     Returns the employer's current OPEN billing cycle, creating one if none
-    exists. Only ever one OPEN cycle per employer at a time — a new one is
-    created only when there is none open (e.g. after the previous cycle was
-    closed by the employer confirming payroll deduction).
+    exists. Only ever one OPEN cycle per employer at a time.
     """
     existing = (
         db.query(BillingCycle)
@@ -74,7 +74,7 @@ def get_or_create_open_cycle(db: Session, employer: Employer) -> BillingCycle:
     payroll_deduction_date = _compute_payroll_deduction_date(employer, period_start)
     period_end = payroll_deduction_date - timedelta(days=employer.cutoff_days_before_payroll)
     if period_end < period_start:
-        period_end = period_start  # safety clamp for very short cutoff configs
+        period_end = period_start
 
     employer_payment_due_date = payroll_deduction_date + timedelta(days=employer.collection_delay_days)
     merchant_settlement_due_date = employer_payment_due_date + timedelta(days=employer.merchant_settlement_delay_days)
@@ -92,3 +92,22 @@ def get_or_create_open_cycle(db: Session, employer: Employer) -> BillingCycle:
     db.add(cycle)
     db.flush()
     return cycle
+
+
+def close_cycle(db: Session, cycle: BillingCycle) -> None:
+    """
+    Transitions an OPEN cycle to CLOSED, snapshotting the expected employer
+    payment amount at this exact moment. Safe to snapshot now rather than
+    recompute later — once CLOSED, no new transaction can ever be assigned
+    to this cycle (get_or_create_open_cycle always starts a fresh one), so
+    the total is permanently stable from here on. Shared by both the
+    automatic scheduler and the employer's manual "Close Now" action, so
+    the snapshot always happens the same way regardless of trigger.
+    """
+    total = (
+        db.query(func.coalesce(func.sum(Transaction.amount), 0))
+        .filter(Transaction.billing_cycle_id == cycle.id, Transaction.status == TransactionStatus.APPROVED)
+        .scalar()
+    )
+    cycle.status = BillingCycleStatus.CLOSED
+    cycle.employer_amount_expected = Decimal(total)
