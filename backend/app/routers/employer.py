@@ -15,6 +15,7 @@ from app.models.billing_cycle import BillingCycle, BillingCycleStatus
 from app.schemas.employee import EmployeeAdminView, EmployeeApprovalRequest
 from app.services.billing_cycles import get_or_create_open_cycle, close_cycle
 from app.services.payroll_export import get_cycle_deduction_breakdown, breakdown_to_csv, breakdown_to_json
+from app.services.limits import compute_spending_limit
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/employer", tags=["Employer — Employee Approvals"])
@@ -44,6 +45,8 @@ def _to_employee_view(profile: EmployeeProfile, user: User, employer: Employer) 
         department=profile.department,
         job_title=profile.job_title,
         application_status=profile.application_status.value,
+        monthly_net_pay=profile.monthly_net_pay,
+        spending_limit_percentage=profile.spending_limit_percentage,
         monthly_limit=profile.monthly_limit,
         max_transaction_amount=profile.max_transaction_amount,
         daily_limit=profile.daily_limit,
@@ -112,8 +115,18 @@ def approve_employee(
     if not profile:
         raise HTTPException(status_code=404, detail="Employee not found")
 
+    if payload.monthly_net_pay is None:
+        raise HTTPException(status_code=400, detail="Monthly net pay is required to approve an employee.")
+
+    try:
+        computed_limit = compute_spending_limit(payload.monthly_net_pay, payload.spending_limit_percentage)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     profile.application_status = ApplicationStatus.APPROVED
-    profile.monthly_limit = payload.monthly_limit
+    profile.monthly_net_pay = payload.monthly_net_pay
+    profile.spending_limit_percentage = payload.spending_limit_percentage
+    profile.monthly_limit = computed_limit
     profile.max_transaction_amount = payload.max_transaction_amount
     profile.daily_limit = payload.daily_limit
     profile.weekly_limit = payload.weekly_limit
@@ -122,7 +135,7 @@ def approve_employee(
     profile.reviewed_by_user_id = current_user.id
     profile.reviewed_at = datetime.utcnow()
     profile.decision_note = payload.decision_note
-    log_audit(db, current_user, "employee.approve", "employee_profile", profile.id, details=payload.decision_note)
+    log_audit(db, current_user, "employee.approve", "employee_profile", profile.id, details=f"net_pay=£{payload.monthly_net_pay} pct={payload.spending_limit_percentage}% limit=£{computed_limit}")
     db.commit()
     db.refresh(profile)
 

@@ -109,6 +109,21 @@ export default function AdminMerchantSettlements() {
                   <StatusPill status={s.status} />
                 </div>
 
+                {s.status === 'pending' && (
+                  <div style={{ marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>
+                      <span>Settlement readiness</span>
+                      <span style={{ fontWeight: '700', color: s.readiness_percentage >= 100 ? 'var(--color-success-text)' : 'var(--color-text)' }}>{s.readiness_percentage}%</span>
+                    </div>
+                    <div style={{ height: '6px', background: 'var(--color-surface-alt)', borderRadius: '3px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.min(s.readiness_percentage, 100)}%`, background: s.readiness_percentage >= 100 ? 'var(--color-success-text)' : 'var(--color-accent)' }} />
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
+                      £{s.amount_backed} collected from employers so far · £{s.amount_unbacked} still in transit
+                    </div>
+                  </div>
+                )}
+
                 {s.status === 'paid' && (
                   <p style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
                     Paid {s.paid_at ? new Date(s.paid_at).toLocaleString() : ''}

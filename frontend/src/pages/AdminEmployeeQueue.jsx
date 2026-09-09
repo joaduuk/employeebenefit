@@ -18,8 +18,12 @@ function StatusPill({ status }) {
   );
 }
 
-const EMPTY_LIMITS = {
-  monthly_limit: '',
+const MAX_PERCENTAGE = 30;
+const DEFAULT_PERCENTAGE = 20;
+
+const EMPTY_DRAFT = {
+  monthly_net_pay: '',
+  spending_limit_percentage: String(DEFAULT_PERCENTAGE),
   max_transaction_amount: '',
   daily_limit: '',
   weekly_limit: '',
@@ -28,24 +32,11 @@ const EMPTY_LIMITS = {
   decision_note: '',
 };
 
-const LIMIT_FIELDS = [
-  { key: 'monthly_limit', label: 'Monthly limit (£)', type: 'number' },
-  { key: 'max_transaction_amount', label: 'Max per transaction (£)', type: 'number' },
-  { key: 'daily_limit', label: 'Daily limit (£)', type: 'number' },
-  { key: 'weekly_limit', label: 'Weekly limit (£)', type: 'number' },
-  { key: 'benefit_start_date', label: 'Start date', type: 'date' },
-];
-
-function toPayload(draft) {
-  return {
-    monthly_limit: draft.monthly_limit === '' ? null : Number(draft.monthly_limit),
-    max_transaction_amount: draft.max_transaction_amount === '' ? null : Number(draft.max_transaction_amount),
-    daily_limit: draft.daily_limit === '' ? null : Number(draft.daily_limit),
-    weekly_limit: draft.weekly_limit === '' ? null : Number(draft.weekly_limit),
-    eligible_categories_override: draft.eligible_categories_override || null,
-    benefit_start_date: draft.benefit_start_date || null,
-    decision_note: draft.decision_note || null,
-  };
+function computedLimit(draft) {
+  const pay = Number(draft.monthly_net_pay);
+  const pct = Number(draft.spending_limit_percentage);
+  if (!pay || !pct) return null;
+  return (pay * pct / 100).toFixed(2);
 }
 
 export default function AdminEmployeeQueue() {
@@ -54,6 +45,7 @@ export default function AdminEmployeeQueue() {
   const [loading, setLoading] = useState(true);
   const [drafts, setDrafts] = useState({});
   const [actingId, setActingId] = useState(null);
+  const [error, setError] = useState(null);
 
   const fetchEmployees = async (status) => {
     setLoading(true);
@@ -70,19 +62,41 @@ export default function AdminEmployeeQueue() {
 
   useEffect(() => { fetchEmployees(filter); }, [filter]);
 
-  const draftFor = (id) => drafts[id] || EMPTY_LIMITS;
+  const draftFor = (id) => drafts[id] || EMPTY_DRAFT;
   const setDraftField = (id, field, value) => {
     setDrafts((d) => ({ ...d, [id]: { ...draftFor(id), [field]: value } }));
   };
 
   const decide = async (id, action) => {
+    setError(null);
+    const draft = draftFor(id);
+    if (action === 'approve') {
+      const pct = Number(draft.spending_limit_percentage);
+      if (!draft.monthly_net_pay || Number(draft.monthly_net_pay) <= 0) {
+        setError("Enter the employee's monthly net pay before approving.");
+        return;
+      }
+      if (!pct || pct <= 0 || pct > MAX_PERCENTAGE) {
+        setError(`Spending limit percentage must be between 0 and ${MAX_PERCENTAGE}%.`);
+        return;
+      }
+    }
     setActingId(id);
     try {
-      await API.put(`/admin/employees/${id}/${action}`, toPayload(draftFor(id)));
-      setDrafts((d) => ({ ...d, [id]: EMPTY_LIMITS }));
+      await API.put(`/admin/employees/${id}/${action}`, {
+        monthly_net_pay: draft.monthly_net_pay ? Number(draft.monthly_net_pay) : undefined,
+        spending_limit_percentage: draft.spending_limit_percentage ? Number(draft.spending_limit_percentage) : undefined,
+        max_transaction_amount: draft.max_transaction_amount === '' ? null : Number(draft.max_transaction_amount),
+        daily_limit: draft.daily_limit === '' ? null : Number(draft.daily_limit),
+        weekly_limit: draft.weekly_limit === '' ? null : Number(draft.weekly_limit),
+        eligible_categories_override: draft.eligible_categories_override || null,
+        benefit_start_date: draft.benefit_start_date || null,
+        decision_note: draft.decision_note || null,
+      });
+      setDrafts((d) => ({ ...d, [id]: EMPTY_DRAFT }));
       await fetchEmployees(filter);
     } catch (err) {
-      alert(err.response?.data?.detail || `Failed to ${action}`);
+      setError(err.response?.data?.detail || `Failed to ${action}`);
     } finally {
       setActingId(null);
     }
@@ -92,11 +106,15 @@ export default function AdminEmployeeQueue() {
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', padding: '2rem', fontFamily: 'var(--font-body)' }}>
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)', marginBottom: '0.25rem' }}>
-          Employee Applications — Platform Override
+          Employee Applications — All Employers
         </h1>
         <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
-          Employees are normally approved by their own employer. Use this only to step in on a specific case.
+          Platform override — spending limits are calculated automatically as a percentage of the employee's monthly net pay, same as an employer's own approval.
         </p>
+
+        {error && (
+          <div style={{ background: 'var(--color-danger-bg)', color: 'var(--color-danger-text)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem' }}>{error}</div>
+        )}
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
           {['pending', 'approved', 'rejected', 'suspended', ''].map((s) => (
@@ -126,6 +144,7 @@ export default function AdminEmployeeQueue() {
             {employees.map((e) => {
               const draft = draftFor(e.id);
               const isPending = e.application_status === 'pending' || e.application_status === 'under_review';
+              const preview = computedLimit(draft);
               return (
                 <div key={e.id} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '1.25rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
@@ -137,17 +156,17 @@ export default function AdminEmployeeQueue() {
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', background: 'var(--color-surface-alt)', padding: '0.75rem', borderRadius: '8px', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
-                    <div><div style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Employer</div>{e.employer_company_name}</div>
                     <div><div style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Employee No.</div>{e.employee_number || '—'}</div>
                     <div><div style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Department</div>{e.department || '—'}</div>
+                    <div><div style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Job Title</div>{e.job_title || '—'}</div>
                     <div><div style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Login Email</div>{e.user_email}</div>
                   </div>
 
                   {e.application_status === 'approved' && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
                       <div><div style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Monthly Limit</div>{e.monthly_limit != null ? `£${e.monthly_limit}` : 'Employer default'}</div>
+                      <div><div style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Basis</div>{e.spending_limit_percentage != null ? `${e.spending_limit_percentage}% of £${e.monthly_net_pay}` : '—'}</div>
                       <div><div style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Per Transaction</div>{e.max_transaction_amount != null ? `£${e.max_transaction_amount}` : '—'}</div>
-                      <div><div style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Daily / Weekly</div>{e.daily_limit != null || e.weekly_limit != null ? `£${e.daily_limit ?? '—'} / £${e.weekly_limit ?? '—'}` : '—'}</div>
                       <div><div style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Start Date</div>{e.benefit_start_date || 'Immediate'}</div>
                     </div>
                   )}
@@ -161,26 +180,78 @@ export default function AdminEmployeeQueue() {
                   {isPending && (
                     <>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.6rem', marginBottom: '0.6rem' }}>
-                        {LIMIT_FIELDS.map((f) => (
-                          <div key={f.key}>
-                            <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>{f.label}</label>
-                            <input
-                              type={f.type}
-                              value={draft[f.key]}
-                              onChange={(ev) => setDraftField(e.id, f.key, ev.target.value)}
-                              style={{ width: '100%', padding: '0.5rem 0.6rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', boxSizing: 'border-box' }}
-                            />
-                          </div>
-                        ))}
                         <div>
-                          <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Eligible categories (comma-sep, optional)</label>
+                          <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Employee's monthly net pay (£)</label>
                           <input
-                            type="text"
-                            value={draft.eligible_categories_override}
-                            onChange={(ev) => setDraftField(e.id, 'eligible_categories_override', ev.target.value)}
+                            type="number"
+                            value={draft.monthly_net_pay}
+                            onChange={(ev) => setDraftField(e.id, 'monthly_net_pay', ev.target.value)}
                             style={{ width: '100%', padding: '0.5rem 0.6rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', boxSizing: 'border-box' }}
                           />
                         </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Spending limit % (max {MAX_PERCENTAGE}%)</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max={MAX_PERCENTAGE}
+                            value={draft.spending_limit_percentage}
+                            onChange={(ev) => setDraftField(e.id, 'spending_limit_percentage', ev.target.value)}
+                            style={{ width: '100%', padding: '0.5rem 0.6rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Max per transaction (£)</label>
+                          <input
+                            type="number"
+                            value={draft.max_transaction_amount}
+                            onChange={(ev) => setDraftField(e.id, 'max_transaction_amount', ev.target.value)}
+                            style={{ width: '100%', padding: '0.5rem 0.6rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Daily limit (£)</label>
+                          <input
+                            type="number"
+                            value={draft.daily_limit}
+                            onChange={(ev) => setDraftField(e.id, 'daily_limit', ev.target.value)}
+                            style={{ width: '100%', padding: '0.5rem 0.6rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Weekly limit (£)</label>
+                          <input
+                            type="number"
+                            value={draft.weekly_limit}
+                            onChange={(ev) => setDraftField(e.id, 'weekly_limit', ev.target.value)}
+                            style={{ width: '100%', padding: '0.5rem 0.6rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Start date</label>
+                          <input
+                            type="date"
+                            value={draft.benefit_start_date}
+                            onChange={(ev) => setDraftField(e.id, 'benefit_start_date', ev.target.value)}
+                            style={{ width: '100%', padding: '0.5rem 0.6rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                      </div>
+
+                      {preview && (
+                        <div style={{ background: 'var(--color-success-bg)', color: 'var(--color-success-text)', borderRadius: '8px', padding: '0.6rem 0.9rem', marginBottom: '0.75rem', fontSize: '0.9rem', fontWeight: '700' }}>
+                          Resulting monthly spending limit: £{preview}
+                        </div>
+                      )}
+
+                      <div style={{ marginBottom: '0.6rem' }}>
+                        <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Eligible categories (comma-sep, optional)</label>
+                        <input
+                          type="text"
+                          value={draft.eligible_categories_override}
+                          onChange={(ev) => setDraftField(e.id, 'eligible_categories_override', ev.target.value)}
+                          style={{ width: '100%', padding: '0.5rem 0.6rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                        />
                       </div>
                       <input
                         type="text"

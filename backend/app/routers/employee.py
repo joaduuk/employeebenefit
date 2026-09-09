@@ -62,6 +62,8 @@ def get_balance(
         spending_limit=spending_limit,
         outstanding=outstanding,
         available=available,
+        monthly_net_pay=profile.monthly_net_pay,
+        spending_limit_percentage=profile.spending_limit_percentage,
         max_transaction_amount=profile.max_transaction_amount,
         daily_limit=profile.daily_limit,
         weekly_limit=profile.weekly_limit,

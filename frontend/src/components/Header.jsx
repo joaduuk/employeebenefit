@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import Logo from './Logo';
 
 const linkStyle = { color: 'var(--color-text-secondary)', textDecoration: 'none', fontWeight: '600', fontSize: '0.88rem', padding: '0.4rem 0.7rem', borderRadius: '6px', whiteSpace: 'nowrap' };
 const primaryBtnStyle = { padding: '0.4rem 0.9rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem', textDecoration: 'none', whiteSpace: 'nowrap' };
@@ -96,8 +97,8 @@ export default function Header() {
   return (
     <header style={{ position: 'sticky', top: 0, zIndex: 100, background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)' }}>
       <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <a href="/" onClick={goHome} style={{ fontFamily: 'var(--font-heading)', fontSize: '1.3rem', fontWeight: '400', color: 'var(--color-primary)', textDecoration: 'none', cursor: 'pointer' }}>
-          EEB
+        <a href="/" onClick={goHome} style={{ display: 'inline-block', cursor: 'pointer', lineHeight: 0 }}>
+          <Logo height={50} />
         </a>
 
         <nav style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>

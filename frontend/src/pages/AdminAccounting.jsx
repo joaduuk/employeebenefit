@@ -8,7 +8,8 @@ const figureStyle = { fontSize: '1.6rem', fontWeight: '800', color: 'var(--color
 export default function AdminAccounting() {
   const [summary, setSummary] = useState(null);
   const [history, setHistory] = useState([]);
-  const [arrears, setArrears] = useState([]);
+  const [atRisk, setAtRisk] = useState([]);
+  const [suspendingId, setSuspendingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [bankBalance, setBankBalance] = useState('');
   const [notes, setNotes] = useState('');
@@ -18,14 +19,14 @@ export default function AdminAccounting() {
   const load = async () => {
     setLoading(true);
     try {
-      const [summaryRes, historyRes, arrearsRes] = await Promise.all([
+      const [summaryRes, historyRes, atRiskRes] = await Promise.all([
         API.get('/admin/accounting/summary'),
         API.get('/admin/accounting/cash-position/history'),
-        API.get('/admin/accounting/employer-arrears'),
+        API.get('/admin/accounting/at-risk-employers'),
       ]);
       setSummary(summaryRes.data);
       setHistory(historyRes.data);
-      setArrears(arrearsRes.data);
+      setAtRisk(atRiskRes.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -34,6 +35,20 @@ export default function AdminAccounting() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const suspendEmployer = async (employerId, companyName) => {
+    if (!window.confirm(`Suspend ${companyName}? This immediately blocks all of their employees from making new purchases.`)) return;
+    setSuspendingId(employerId);
+    try {
+      await API.put(`/admin/employers/${employerId}/suspend`, { decision_note: 'Suspended from At-Risk Employers view due to overdue payment / arrears pattern.' });
+      setMessage(`${companyName} suspended — their employees can no longer spend.`);
+      await load();
+    } catch (err) {
+      setMessage(err.response?.data?.detail || 'Failed to suspend');
+    } finally {
+      setSuspendingId(null);
+    }
+  };
 
   const recordCashPosition = async (e) => {
     e.preventDefault();
@@ -95,13 +110,36 @@ export default function AdminAccounting() {
           </div>
         </div>
 
-        {arrears.length > 0 && (
+        {atRisk.length > 0 && (
           <div style={{ ...cardStyle, marginBottom: '1.5rem', borderColor: 'var(--color-danger-text)' }}>
-            <div style={{ fontWeight: '700', color: 'var(--color-danger-text)', marginBottom: '0.75rem' }}>Employers with Outstanding Arrears</div>
-            {arrears.map((a) => (
-              <div key={a.employer_id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid var(--color-border)', fontSize: '0.85rem' }}>
-                <span>{a.employer_company_name}</span>
-                <span style={{ fontWeight: '700' }}>£{a.total_shortfall} across {a.cycle_count} cycle{a.cycle_count !== 1 ? 's' : ''}</span>
+            <div style={{ fontWeight: '700', color: 'var(--color-danger-text)', marginBottom: '0.75rem' }}>At-Risk Employers</div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
+              Overdue-unpaid means payroll was deducted but EEB hasn't been paid yet, past the due date. Arrears means a payment came in short. A single occurrence can be a processing delay — a pattern is the real signal.
+            </p>
+            {atRisk.map((a) => (
+              <div key={a.employer_id} style={{ padding: '0.75rem 0', borderBottom: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div>
+                    <span style={{ fontWeight: '700', color: 'var(--color-text)' }}>{a.employer_company_name}</span>
+                    {a.is_pattern && (
+                      <span style={{ marginLeft: '0.5rem', background: 'var(--color-danger-bg)', color: 'var(--color-danger-text)', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: '700', padding: '0.15rem 0.6rem' }}>
+                        Pattern
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    disabled={suspendingId === a.employer_id}
+                    onClick={() => suspendEmployer(a.employer_id, a.employer_company_name)}
+                    style={{ padding: '0.35rem 0.8rem', background: 'var(--color-danger-bg)', color: 'var(--color-danger-text)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.78rem' }}
+                  >
+                    {suspendingId === a.employer_id ? '…' : 'Suspend'}
+                  </button>
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', marginTop: '0.3rem' }}>
+                  {a.overdue_unpaid_count > 0 && <span>Overdue unpaid: £{a.overdue_unpaid_amount} across {a.overdue_unpaid_count} cycle{a.overdue_unpaid_count !== 1 ? 's' : ''}. </span>}
+                  {a.arrears_count > 0 && <span>Arrears: £{a.arrears_amount} across {a.arrears_count} cycle{a.arrears_count !== 1 ? 's' : ''}. </span>}
+                  <strong>Total at risk: £{a.total_at_risk}</strong>
+                </div>
               </div>
             ))}
           </div>

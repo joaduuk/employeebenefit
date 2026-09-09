@@ -1,4 +1,5 @@
 # backend/app/services/accounting.py
+from datetime import date
 from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -50,10 +51,6 @@ def get_accounting_summary(db: Session) -> dict:
         .count()
     )
 
-    # Actually collected — the REAL amount received, not the amount that
-    # was owed. A cycle confirmed EMPLOYER_PAID with a shortfall only
-    # contributes what was actually received; the gap shows up separately
-    # as arrears below, never silently absorbed into "collected".
     paid_cycles = (
         db.query(BillingCycle)
         .filter(BillingCycle.status.in_([BillingCycleStatus.EMPLOYER_PAID, BillingCycleStatus.MERCHANTS_SETTLED]))
@@ -106,10 +103,8 @@ def get_accounting_summary(db: Session) -> dict:
 
 def get_employer_arrears(db: Session) -> list:
     """
-    Every employer with an outstanding shortfall — a cycle confirmed
-    EMPLOYER_PAID where less was received than expected. This is the
-    standing-arrears view: shortfalls are tracked here for visibility and
-    manual follow-up, not automatically rolled into a future cycle.
+    Every employer with a CONFIRMED outstanding shortfall — a cycle
+    marked EMPLOYER_PAID where less was received than expected.
     """
     cycles = (
         db.query(BillingCycle, Employer)
@@ -137,3 +132,70 @@ def get_employer_arrears(db: Session) -> list:
         by_employer[employer.id]["cycle_count"] += 1
 
     return list(by_employer.values())
+
+
+def get_at_risk_employers(db: Session) -> list:
+    """
+    Early-warning view for employer financial distress — deliberately
+    NOT automatic suspension. Surfaces two signals per employer:
+
+    - overdue-unpaid: payroll already deducted from employees
+      (PAYROLL_DEDUCTED), but the employer's payment to EEB is now past
+      its due date and not yet even confirmed as paid at all.
+    - arrears: already confirmed paid, but for less than expected.
+
+    A single occurrence in either category could just be a processing
+    delay. A pattern across multiple cycles is the real signal — flagged
+    via is_pattern rather than auto-acted on, so an admin can make the
+    actual suspend/don't-suspend call with full visibility.
+    """
+    today = date.today()
+
+    overdue_cycles = (
+        db.query(BillingCycle, Employer)
+        .join(Employer, BillingCycle.employer_id == Employer.id)
+        .filter(
+            BillingCycle.status == BillingCycleStatus.PAYROLL_DEDUCTED,
+            BillingCycle.employer_payment_due_date < today,
+        )
+        .all()
+    )
+
+    by_employer = {}
+
+    for cycle, employer in overdue_cycles:
+        key = str(employer.id)
+        if key not in by_employer:
+            by_employer[key] = {
+                "employer_id": key,
+                "employer_company_name": employer.company_name,
+                "overdue_unpaid_count": 0,
+                "overdue_unpaid_amount": Decimal("0.00"),
+                "arrears_count": 0,
+                "arrears_amount": Decimal("0.00"),
+            }
+        by_employer[key]["overdue_unpaid_count"] += 1
+        by_employer[key]["overdue_unpaid_amount"] += (cycle.employer_amount_expected or Decimal("0.00"))
+
+    for a in get_employer_arrears(db):
+        key = a["employer_id"]
+        if key not in by_employer:
+            by_employer[key] = {
+                "employer_id": key,
+                "employer_company_name": a["employer_company_name"],
+                "overdue_unpaid_count": 0,
+                "overdue_unpaid_amount": Decimal("0.00"),
+                "arrears_count": 0,
+                "arrears_amount": Decimal("0.00"),
+            }
+        by_employer[key]["arrears_count"] = a["cycle_count"]
+        by_employer[key]["arrears_amount"] = a["total_shortfall"]
+
+    results = []
+    for v in by_employer.values():
+        v["total_at_risk"] = v["overdue_unpaid_amount"] + v["arrears_amount"]
+        v["is_pattern"] = (v["overdue_unpaid_count"] + v["arrears_count"]) > 1
+        results.append(v)
+
+    results.sort(key=lambda x: x["total_at_risk"], reverse=True)
+    return results

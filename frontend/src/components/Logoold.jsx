@@ -25,12 +25,12 @@ export default function Logo({ height = 40 }) {
       <text
         x="270" y="170"
         style={{ fontFamily: "'DM Serif Display', Georgia, serif" }}
-        fontSize="90"
+        fontSize="56"
         fill="#2F9E6E"
       >
         app
       </text>
-      <path d="M436 165 L445 174 L461 145" fill="none" stroke="#2F9E6E" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M350 165 L359 174 L375 145" fill="none" stroke="#2F9E6E" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

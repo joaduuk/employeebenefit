@@ -50,6 +50,17 @@ class EmployerArrearsView(BaseModel):
     cycle_count: int
 
 
+class AtRiskEmployerView(BaseModel):
+    employer_id: str
+    employer_company_name: str
+    overdue_unpaid_count: int
+    overdue_unpaid_amount: Decimal
+    arrears_count: int
+    arrears_amount: Decimal
+    total_at_risk: Decimal
+    is_pattern: bool
+
+
 class AuditLogView(BaseModel):
     id: str
     actor_email: Optional[str] = None

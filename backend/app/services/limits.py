@@ -13,6 +13,38 @@ from app.models.billing_cycle import BillingCycle, BillingCycleStatus
 from app.models.transaction import Transaction, TransactionStatus
 from app.models.approval import ApplicationStatus
 
+# The hard system-wide ceiling — no employer can set an employee's
+# spending limit above this percentage of their monthly net pay,
+# regardless of seniority or any other justification. Chosen to sit
+# roughly where UK Direct Earnings Attachments' higher rate sits, and
+# comfortably inside the "leave the majority of pay untouched" principle
+# reflected in protected-earnings rules generally. This is a product
+# design choice, not a confirmed legal requirement — see
+# eeb-regulatory-status.md open questions 3 and 5.
+MAX_SPENDING_LIMIT_PERCENTAGE = Decimal("30.00")
+
+# Pre-filled default shown to an employer approving a typical employee —
+# they can move it anywhere from just above 0 up to the ceiling above.
+DEFAULT_SPENDING_LIMIT_PERCENTAGE = Decimal("20.00")
+
+
+def compute_spending_limit(monthly_net_pay: Decimal, spending_limit_percentage: Decimal) -> Decimal:
+    """
+    The single source of truth for turning (net pay, percentage) into an
+    actual spending limit — used by both the employer's own approval
+    endpoint and the platform-staff override, so the ceiling is enforced
+    identically regardless of which one is used.
+    """
+    if spending_limit_percentage <= 0 or spending_limit_percentage > MAX_SPENDING_LIMIT_PERCENTAGE:
+        raise ValueError(
+            f"Spending limit percentage must be greater than 0 and no more than {MAX_SPENDING_LIMIT_PERCENTAGE}%."
+        )
+    if monthly_net_pay <= 0:
+        raise ValueError("Monthly net pay must be greater than 0.")
+
+    limit = (monthly_net_pay * spending_limit_percentage / Decimal("100")).quantize(Decimal("0.01"))
+    return limit
+
 
 def _approved_spend_since(db: Session, employee_id, since: datetime) -> Decimal:
     total = (
@@ -30,12 +62,9 @@ def _approved_spend_since(db: Session, employee_id, since: datetime) -> Decimal:
 def get_outstanding_balance(db: Session, employee_id) -> Decimal:
     """
     What the employee currently owes and hasn't yet had cleared via payroll.
-    A transaction's obligation clears the moment its billing cycle's payroll
-    deduction has actually happened — NOT when the employer subsequently
-    pays the platform, and NOT just because the cycle's cutoff date passed.
-    So this counts every APPROVED transaction whose cycle is still OPEN or
-    CLOSED (cutoff passed but payroll not yet confirmed deducted) — anything
-    in a cycle at PAYROLL_DEDUCTED or later no longer counts against them.
+    Counts every APPROVED transaction whose cycle is still OPEN or CLOSED
+    (cutoff passed but payroll not yet confirmed deducted) — anything in a
+    cycle at PAYROLL_DEDUCTED or later no longer counts against them.
     """
     total = (
         db.query(func.coalesce(func.sum(Transaction.amount), 0))
@@ -53,8 +82,6 @@ def get_outstanding_balance(db: Session, employee_id) -> Decimal:
 def _category_allowed(employee: EmployeeProfile, employer: Employer, merchant: Merchant) -> Tuple[bool, Optional[str]]:
     merchant_category = merchant.category.value
 
-    # Per-employee override takes precedence over the employer's default
-    # allow/block lists entirely, per the model's design.
     if employee.eligible_categories_override:
         allowed = {c.strip() for c in employee.eligible_categories_override.split(",") if c.strip()}
         if merchant_category not in allowed:
@@ -81,14 +108,8 @@ def check_transaction_allowed(
     merchant: Merchant,
     amount: Decimal,
 ) -> Tuple[bool, Optional[str]]:
-    """
-    Returns (True, None) if the transaction can proceed, or (False, reason)
-    if some check blocks it. Checked in order from cheapest/most-fundamental
-    to most-expensive (DB aggregate queries) so we fail fast.
-    """
     today = date.today()
 
-    # --- Eligibility gates ---
     if employee.application_status != ApplicationStatus.APPROVED:
         return False, "Your account isn't approved to use the benefit yet."
     if employee.left_employer_at is not None:
@@ -102,17 +123,13 @@ def check_transaction_allowed(
     if merchant.application_status != ApplicationStatus.APPROVED or not merchant.payments_enabled:
         return False, "This merchant can't accept payments right now."
 
-    # --- Category restriction ---
     ok, reason = _category_allowed(employee, employer, merchant)
     if not ok:
         return False, reason
 
-    # --- Per-transaction cap ---
     if employee.max_transaction_amount is not None and amount > employee.max_transaction_amount:
         return False, f"This purchase exceeds your per-transaction limit of £{employee.max_transaction_amount}."
 
-    # --- Rolling daily / weekly caps (pacing limits, independent of the
-    # overall spending-limit/outstanding-balance check below) ---
     if employee.daily_limit is not None:
         since = datetime.combine(today, datetime.min.time())
         spent = _approved_spend_since(db, employee.id, since)
@@ -125,10 +142,6 @@ def check_transaction_allowed(
         if spent + amount > employee.weekly_limit:
             return False, f"This purchase would exceed your weekly limit of £{employee.weekly_limit}."
 
-    # --- Overall spending limit, tracked as outstanding balance against the
-    # current billing cycle rather than a rolling calendar month. Available
-    # only grows back once a cycle's payroll deduction is confirmed — see
-    # get_outstanding_balance. ---
     spending_limit = employee.monthly_limit if employee.monthly_limit is not None else employer.default_employee_monthly_limit
     outstanding = get_outstanding_balance(db, employee.id)
     available = spending_limit - outstanding

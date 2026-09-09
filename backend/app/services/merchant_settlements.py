@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.merchant import Merchant
 from app.models.transaction import Transaction, TransactionStatus
 from app.models.merchant_settlement import MerchantSettlement
+from app.models.billing_cycle import BillingCycle, BillingCycleStatus
 from app.models.approval import ApplicationStatus
 
 
@@ -18,8 +19,7 @@ def _previous_month(today: date) -> tuple:
 
 
 def _last_day_of_month_after(year: int, month: int) -> date:
-    """Last day of the month AFTER (year, month) — the settlement due date,
-    per the "paid on the last day of the following month" design."""
+    """Last day of the month AFTER (year, month) — the settlement due date."""
     next_month = month + 1
     next_year = year
     if next_month > 12:
@@ -45,6 +45,51 @@ def compute_month_total(db: Session, merchant_id, year: int, month: int) -> Deci
         .scalar()
     )
     return Decimal(total)
+
+
+def get_settlement_readiness(db: Session, settlement: MerchantSettlement) -> dict:
+    """
+    For a given monthly settlement, breaks down how much of the total is
+    backed by employer money EEB has actually collected (the underlying
+    billing cycle has reached EMPLOYER_PAID or later) versus still riding
+    on the assumption that collection completes before this settlement
+    gets paid out. This is visibility, not a gate — per the Merchant
+    Agreement's guaranteed-payment commitment, an unready settlement still
+    gets paid on schedule; this just shows the platform admin what's
+    actually backing that payment before they confirm it.
+    """
+    start = date(settlement.period_year, settlement.period_month, 1)
+    last_day = calendar.monthrange(settlement.period_year, settlement.period_month)[1]
+    end = date(settlement.period_year, settlement.period_month, last_day)
+
+    rows = (
+        db.query(Transaction, BillingCycle)
+        .outerjoin(BillingCycle, Transaction.billing_cycle_id == BillingCycle.id)
+        .filter(
+            Transaction.merchant_id == settlement.merchant_id,
+            Transaction.status == TransactionStatus.APPROVED,
+            func.date(Transaction.approved_at) >= start,
+            func.date(Transaction.approved_at) <= end,
+        )
+        .all()
+    )
+
+    backed = Decimal("0.00")
+    unbacked = Decimal("0.00")
+    for txn, cycle in rows:
+        if cycle and cycle.status in (BillingCycleStatus.EMPLOYER_PAID, BillingCycleStatus.MERCHANTS_SETTLED):
+            backed += txn.amount
+        else:
+            unbacked += txn.amount
+
+    total = backed + unbacked
+    readiness_pct = float(backed / total * 100) if total > 0 else 100.0
+
+    return {
+        "amount_backed": backed,
+        "amount_unbacked": unbacked,
+        "readiness_percentage": round(readiness_pct, 1),
+    }
 
 
 def generate_due_settlements(db: Session):

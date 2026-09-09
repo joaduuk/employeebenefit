@@ -22,9 +22,11 @@ from app.schemas.merchant_settlement import MarkSettlementPaidRequest
 from app.schemas.transaction import AdminTransactionView
 from app.schemas.accounting import (
     DisputeRequest, EmployerPaymentConfirmRequest, CashPositionCreateRequest,
-    CashPositionView, AccountingSummaryView, AuditLogView, EmployerArrearsView,
+    CashPositionView, AccountingSummaryView, AuditLogView, EmployerArrearsView, AtRiskEmployerView,
 )
-from app.services.accounting import get_accounting_summary, get_employer_arrears
+from app.services.accounting import get_accounting_summary, get_employer_arrears, get_at_risk_employers
+from app.services.merchant_settlements import get_settlement_readiness
+from app.services.limits import compute_spending_limit
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/admin", tags=["Admin — Approvals"])
@@ -319,6 +321,8 @@ def _to_employee_admin_view(profile: EmployeeProfile, user: User, employer: Empl
         department=profile.department,
         job_title=profile.job_title,
         application_status=profile.application_status.value,
+        monthly_net_pay=profile.monthly_net_pay,
+        spending_limit_percentage=profile.spending_limit_percentage,
         monthly_limit=profile.monthly_limit,
         max_transaction_amount=profile.max_transaction_amount,
         daily_limit=profile.daily_limit,
@@ -384,8 +388,18 @@ def approve_employee_override(
     if not profile:
         raise HTTPException(status_code=404, detail="Employee not found")
 
+    if payload.monthly_net_pay is None:
+        raise HTTPException(status_code=400, detail="Monthly net pay is required to approve an employee.")
+
+    try:
+        computed_limit = compute_spending_limit(payload.monthly_net_pay, payload.spending_limit_percentage)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     profile.application_status = ApplicationStatus.APPROVED
-    profile.monthly_limit = payload.monthly_limit
+    profile.monthly_net_pay = payload.monthly_net_pay
+    profile.spending_limit_percentage = payload.spending_limit_percentage
+    profile.monthly_limit = computed_limit
     profile.max_transaction_amount = payload.max_transaction_amount
     profile.daily_limit = payload.daily_limit
     profile.weekly_limit = payload.weekly_limit
@@ -394,7 +408,7 @@ def approve_employee_override(
     profile.reviewed_by_user_id = staff.id
     profile.reviewed_at = datetime.utcnow()
     profile.decision_note = payload.decision_note
-    log_audit(db, staff, "employee.approve_override", "employee_profile", profile.id, details=payload.decision_note)
+    log_audit(db, staff, "employee.approve_override", "employee_profile", profile.id, details=f"net_pay=£{payload.monthly_net_pay} pct={payload.spending_limit_percentage}% limit=£{computed_limit}")
     db.commit()
     db.refresh(profile)
 
@@ -465,8 +479,10 @@ def list_all_merchant_settlements(
     if status is not None:
         query = query.filter(MerchantSettlement.status == status)
     rows = query.order_by(MerchantSettlement.due_date.asc()).all()
-    return [
-        {
+    results = []
+    for s, m in rows:
+        readiness = get_settlement_readiness(db, s)
+        results.append({
             "id": str(s.id),
             "merchant_id": str(s.merchant_id),
             "business_name": m.business_name,
@@ -477,9 +493,11 @@ def list_all_merchant_settlements(
             "status": s.status.value,
             "paid_at": s.paid_at.isoformat() if s.paid_at else None,
             "paid_reference": s.paid_reference,
-        }
-        for s, m in rows
-    ]
+            "amount_backed": str(readiness["amount_backed"]),
+            "amount_unbacked": str(readiness["amount_unbacked"]),
+            "readiness_percentage": readiness["readiness_percentage"],
+        })
+    return results
 
 
 @router.put("/merchant-settlements/{settlement_id}/mark-paid")
@@ -585,6 +603,21 @@ def list_employer_arrears(
     _staff: User = Depends(require_platform_staff()),
 ):
     return get_employer_arrears(db)
+
+
+@router.get("/accounting/at-risk-employers", response_model=List[AtRiskEmployerView])
+def list_at_risk_employers(
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    """
+    Early-warning signal, not automatic action — see
+    services.accounting.get_at_risk_employers for the exact logic.
+    Suspending an employer (existing PUT /admin/employers/{id}/suspend)
+    remains a deliberate, manual decision made with this visibility,
+    not something the system triggers on its own.
+    """
+    return get_at_risk_employers(db)
 
 
 # --- Transaction oversight + dispute marking ------------------------------

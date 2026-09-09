@@ -6,7 +6,16 @@ from decimal import Decimal
 
 
 class EmployeeApprovalRequest(BaseModel):
-    monthly_limit: Optional[Decimal] = None
+    """
+    monthly_limit is no longer typed directly — it's computed by the
+    backend from monthly_net_pay × spending_limit_percentage, enforced
+    against a hard ceiling (see services.limits.MAX_SPENDING_LIMIT_PERCENTAGE).
+    This closes the gap where an employer admin could previously set any
+    arbitrary cash figure with no relationship to what the employee
+    actually earns.
+    """
+    monthly_net_pay: Optional[Decimal] = None
+    spending_limit_percentage: Optional[Decimal] = Decimal("20.00")  # DEFAULT_SPENDING_LIMIT_PERCENTAGE
     max_transaction_amount: Optional[Decimal] = None
     daily_limit: Optional[Decimal] = None
     weekly_limit: Optional[Decimal] = None
@@ -24,6 +33,8 @@ class EmployeeAdminView(BaseModel):
     department: Optional[str] = None
     job_title: Optional[str] = None
     application_status: str
+    monthly_net_pay: Optional[Decimal] = None
+    spending_limit_percentage: Optional[Decimal] = None
     monthly_limit: Optional[Decimal] = None
     max_transaction_amount: Optional[Decimal] = None
     daily_limit: Optional[Decimal] = None
@@ -43,13 +54,15 @@ class EmployeeAdminView(BaseModel):
 
 class EmployeeBalanceView(BaseModel):
     """
-    What the employee sees about their own account — the spending limit,
-    what's currently outstanding (not yet cleared via payroll), and what's
-    left available to spend right now.
+    What the employee sees about their own account. Includes their own
+    registered pay and percentage for transparency — they can see exactly
+    how their limit was calculated, not just the resulting figure.
     """
     spending_limit: Decimal
     outstanding: Decimal
     available: Decimal
+    monthly_net_pay: Optional[Decimal] = None
+    spending_limit_percentage: Optional[Decimal] = None
     max_transaction_amount: Optional[Decimal] = None
     daily_limit: Optional[Decimal] = None
     weekly_limit: Optional[Decimal] = None
