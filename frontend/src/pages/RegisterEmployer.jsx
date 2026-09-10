@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../services/api';
+import LegalDocumentModal from '../components/LegalDocumentModal';
 
 const inputStyle = { width: '100%', padding: '0.75rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '1rem', boxSizing: 'border-box', fontFamily: 'var(--font-body)', color: 'var(--color-text)' };
 const labelStyle = { display: 'block', marginBottom: '0.4rem', color: 'var(--color-text-secondary)', fontWeight: '600', fontSize: '0.875rem' };
@@ -19,6 +20,7 @@ const EMPTY_FORM = {
   full_name: '', email: '', phone: '', password: '',
   company_name: '', registration_number: '',
   payroll_frequency: 'monthly', payroll_day: '',
+  agreed_to_terms: false,
 };
 
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -28,6 +30,7 @@ export default function RegisterEmployer() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [openDoc, setOpenDoc] = useState(null); // null | 'terms' | 'privacy'
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const isWeeklyType = form.payroll_frequency === 'weekly' || form.payroll_frequency === 'fortnightly';
@@ -37,6 +40,7 @@ export default function RegisterEmployer() {
     setError(''); setSuccess('');
     if (form.password.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (form.payroll_day === '') { setError('Please enter your payroll day'); return; }
+    if (!form.agreed_to_terms) { setError('You must agree to the Employer Agreement and Privacy Policy to register'); return; }
 
     setLoading(true);
     try {
@@ -113,6 +117,29 @@ export default function RegisterEmployer() {
                   <input type="number" min="1" max="31" required value={form.payroll_day} onChange={set('payroll_day')} style={inputStyle} placeholder="e.g. 25" />
                 )}
               </div>
+
+              <div style={{ ...fieldStyle, display: 'flex', alignItems: 'flex-start', gap: '0.6rem', marginTop: '1.5rem' }}>
+                <input
+                  type="checkbox"
+                  id="agree"
+                  checked={form.agreed_to_terms}
+                  onChange={(e) => setForm((f) => ({ ...f, agreed_to_terms: e.target.checked }))}
+                  style={{ width: '18px', height: '18px', marginTop: '0.15rem', cursor: 'pointer', flexShrink: 0 }}
+                />
+                <label htmlFor="agree" style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+                  I agree to the{' '}
+                  <button type="button" onClick={() => setOpenDoc('terms')} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontWeight: '600', cursor: 'pointer', textDecoration: 'underline', font: 'inherit' }}>Employer Agreement</button>
+                  {' '}and{' '}
+                  <button type="button" onClick={() => setOpenDoc('privacy')} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontWeight: '600', cursor: 'pointer', textDecoration: 'underline', font: 'inherit' }}>Privacy Policy</button>
+                </label>
+              </div>
+
+              {openDoc === 'terms' && (
+                <LegalDocumentModal url="/legal/employer-agreement" title="Employer Agreement" onClose={() => setOpenDoc(null)} />
+              )}
+              {openDoc === 'privacy' && (
+                <LegalDocumentModal url="/legal/privacy" title="Privacy Policy" onClose={() => setOpenDoc(null)} />
+              )}
 
               <button type="submit" disabled={loading} style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', background: loading ? 'var(--color-border-strong)' : 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', fontSize: '1rem', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer' }}>
                 {loading ? 'Submitting…' : 'Submit Application'}

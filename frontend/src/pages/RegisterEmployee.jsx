@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../services/api';
+import LegalDocumentModal from '../components/LegalDocumentModal';
 
 const inputStyle = { width: '100%', padding: '0.75rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '1rem', boxSizing: 'border-box', fontFamily: 'var(--font-body)', color: 'var(--color-text)' };
 const labelStyle = { display: 'block', marginBottom: '0.4rem', color: 'var(--color-text-secondary)', fontWeight: '600', fontSize: '0.875rem' };
@@ -18,6 +19,7 @@ const SuccessBanner = ({ msg }) => msg ? (
 const EMPTY_FORM = {
   full_name: '', email: '', phone: '', password: '',
   work_email: '', employee_number: '', department: '', job_title: '',
+  agreed_to_terms: false,
 };
 
 const DEBOUNCE_MS = 350;
@@ -27,6 +29,7 @@ export default function RegisterEmployee() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [openDoc, setOpenDoc] = useState(null); // null | 'terms' | 'privacy'
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   // --- Employer picker ---
@@ -72,6 +75,7 @@ export default function RegisterEmployee() {
     setError(''); setSuccess('');
     if (form.password.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (!selectedEmployer) { setError('Please select your employer from the list'); return; }
+    if (!form.agreed_to_terms) { setError('You must agree to the Employee Terms and Privacy Policy to register'); return; }
 
     setLoading(true);
     try {
@@ -177,6 +181,29 @@ export default function RegisterEmployee() {
                 <label style={labelStyle}>Job Title (optional)</label>
                 <input type="text" value={form.job_title} onChange={set('job_title')} style={inputStyle} />
               </div>
+
+              <div style={{ ...fieldStyle, display: 'flex', alignItems: 'flex-start', gap: '0.6rem', marginTop: '1.5rem' }}>
+                <input
+                  type="checkbox"
+                  id="agree"
+                  checked={form.agreed_to_terms}
+                  onChange={(e) => setForm((f) => ({ ...f, agreed_to_terms: e.target.checked }))}
+                  style={{ width: '18px', height: '18px', marginTop: '0.15rem', cursor: 'pointer', flexShrink: 0 }}
+                />
+                <label htmlFor="agree" style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+                  I agree to the{' '}
+                  <button type="button" onClick={() => setOpenDoc('terms')} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontWeight: '600', cursor: 'pointer', textDecoration: 'underline', font: 'inherit' }}>Employee Terms</button>
+                  {' '}and{' '}
+                  <button type="button" onClick={() => setOpenDoc('privacy')} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', fontWeight: '600', cursor: 'pointer', textDecoration: 'underline', font: 'inherit' }}>Privacy Policy</button>
+                </label>
+              </div>
+
+              {openDoc === 'terms' && (
+                <LegalDocumentModal url="/legal/employee-terms" title="Employee Terms" onClose={() => setOpenDoc(null)} />
+              )}
+              {openDoc === 'privacy' && (
+                <LegalDocumentModal url="/legal/privacy" title="Privacy Policy" onClose={() => setOpenDoc(null)} />
+              )}
 
               <button type="submit" disabled={loading} style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', background: loading ? 'var(--color-border-strong)' : 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', fontSize: '1rem', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer' }}>
                 {loading ? 'Submitting…' : 'Submit Application'}

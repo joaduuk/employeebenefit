@@ -20,6 +20,11 @@ class _AccountFields(BaseModel):
     password: str
     full_name: str
     phone: Optional[str] = None
+    # Must be explicitly True to register — checked server-side in the
+    # endpoint itself, not just enforced by a disabled frontend button.
+    # Recorded as a ConsentRecord (see app/services/consent.py) alongside
+    # the account it belongs to, in the same transaction.
+    agreed_to_terms: bool = False
 
 
 # --- Employer registration ---

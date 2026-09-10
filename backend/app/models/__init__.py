@@ -15,6 +15,7 @@ from app.models.transaction import Transaction, TransactionMethod, TransactionSt
 from app.models.merchant_settlement import MerchantSettlement, MerchantSettlementStatus
 from app.models.audit_log import AuditLog
 from app.models.cash_position import CashPositionEntry
+from app.models.consent import ConsentRecord
 
 __all__ = [
     "ApplicationStatus", "ApprovalAuditMixin",
@@ -27,4 +28,5 @@ __all__ = [
     "MerchantSettlement", "MerchantSettlementStatus",
     "AuditLog",
     "CashPositionEntry",
+    "ConsentRecord",
 ]

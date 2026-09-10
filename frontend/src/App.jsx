@@ -37,6 +37,9 @@ import AdminBillingCycles from './pages/AdminBillingCycles';
 import AdminTransactions from './pages/AdminTransactions';
 import AdminAccounting from './pages/AdminAccounting';
 import AdminAuditLog from './pages/AdminAuditLog';
+import EmployeeTerms from './pages/EmployeeTerms';
+import EmployerAgreement from './pages/EmployerAgreement';
+import MerchantAgreement from './pages/MerchantAgreement';
 
 function AppContent() {
   return (
@@ -61,6 +64,9 @@ function AppContent() {
       <Route path="/legal/terms" element={<TermsOfUse />} />
       <Route path="/legal/cookies" element={<CookiePolicy />} />
       <Route path="/legal/complaints" element={<ComplaintsProcedure />} />
+      <Route path="/legal/employee-terms" element={<EmployeeTerms />} />
+      <Route path="/legal/employer-agreement" element={<EmployerAgreement />} />
+      <Route path="/legal/merchant-agreement" element={<MerchantAgreement />} />
 
       <Route
         path="/dashboard"

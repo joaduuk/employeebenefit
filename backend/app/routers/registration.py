@@ -1,5 +1,5 @@
 # backend/app/routers/registration.py
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
 import secrets
@@ -13,6 +13,7 @@ from app.models.employer import Employer
 from app.models.merchant import Merchant
 from app.models.employee_profile import EmployeeProfile
 from app.models.approval import ApplicationStatus
+from app.services.consent import record_consent
 from app.schemas.registration import (
     EmployerRegisterRequest, EmployerRegisterResponse,
     MerchantRegisterRequest, MerchantRegisterResponse,
@@ -56,7 +57,10 @@ def _create_base_user(db: Session, email: str, password: str, full_name: str, ph
 
 
 @router.post("/employer", response_model=EmployerRegisterResponse)
-def register_employer(payload: EmployerRegisterRequest, db: Session = Depends(get_db)):
+def register_employer(payload: EmployerRegisterRequest, request: Request, db: Session = Depends(get_db)):
+    if not payload.agreed_to_terms:
+        raise HTTPException(status_code=400, detail="You must agree to the Employer Agreement and Privacy Policy to register")
+
     user, token = _create_base_user(
         db, payload.email, payload.password, payload.full_name, payload.phone, UserRole.EMPLOYER
     )
@@ -71,6 +75,11 @@ def register_employer(payload: EmployerRegisterRequest, db: Session = Depends(ge
         benefit_active=False,
     )
     db.add(employer)
+
+    ip = request.client.host if request.client else None
+    record_consent(db, user.id, "employer_agreement", ip)
+    record_consent(db, user.id, "privacy_policy", ip)
+
     db.commit()
     db.refresh(user)
     db.refresh(employer)
@@ -89,7 +98,10 @@ def register_employer(payload: EmployerRegisterRequest, db: Session = Depends(ge
 
 
 @router.post("/merchant", response_model=MerchantRegisterResponse)
-def register_merchant(payload: MerchantRegisterRequest, db: Session = Depends(get_db)):
+def register_merchant(payload: MerchantRegisterRequest, request: Request, db: Session = Depends(get_db)):
+    if not payload.agreed_to_terms:
+        raise HTTPException(status_code=400, detail="You must agree to the Merchant Agreement and Privacy Policy to register")
+
     user, token = _create_base_user(
         db, payload.email, payload.password, payload.full_name, payload.phone, UserRole.MERCHANT
     )
@@ -111,6 +123,11 @@ def register_merchant(payload: MerchantRegisterRequest, db: Session = Depends(ge
         payouts_enabled=False,
     )
     db.add(merchant)
+
+    ip = request.client.host if request.client else None
+    record_consent(db, user.id, "merchant_agreement", ip)
+    record_consent(db, user.id, "privacy_policy", ip)
+
     db.commit()
     db.refresh(user)
     db.refresh(merchant)
@@ -147,7 +164,10 @@ def lookup_employers(q: str = Query(..., min_length=2), db: Session = Depends(ge
 
 
 @router.post("/employee", response_model=EmployeeRegisterResponse)
-def register_employee(payload: EmployeeRegisterRequest, db: Session = Depends(get_db)):
+def register_employee(payload: EmployeeRegisterRequest, request: Request, db: Session = Depends(get_db)):
+    if not payload.agreed_to_terms:
+        raise HTTPException(status_code=400, detail="You must agree to the Employee Terms and Privacy Policy to register")
+
     employer = db.query(Employer).filter(Employer.id == payload.employer_id).first()
     if not employer or employer.application_status != ApplicationStatus.APPROVED:
         # Deliberately vague — don't reveal whether the employer_id exists
@@ -168,6 +188,11 @@ def register_employee(payload: EmployeeRegisterRequest, db: Session = Depends(ge
         application_status=ApplicationStatus.PENDING,
     )
     db.add(profile)
+
+    ip = request.client.host if request.client else None
+    record_consent(db, user.id, "employee_terms", ip)
+    record_consent(db, user.id, "privacy_policy", ip)
+
     db.commit()
     db.refresh(user)
     db.refresh(profile)
