@@ -91,21 +91,37 @@ def send_password_reset_email(to_email: str, full_name: str, token: str) -> None
     _send(to_email, "Reset your EEB password", body)
 
 
-def send_contact_form_email(name: str, email: str, message: str) -> None:
+def send_contact_form_email(name: str, email: str, message: str, category: str = "general", transaction_reference: str = None) -> None:
     """
     Sent to EEB's own inbox (settings.SMTP_FROM_EMAIL), not to the person
     who submitted the form — Reply-To is set to their address so replying
     goes straight to them. name/message are HTML-escaped since they're
     unauthenticated user input being embedded in an HTML email body.
+
+    category/transaction_reference let any party (employee, merchant, or
+    employer) report a dispute through this same shared form rather than
+    needing a separate authenticated submission flow — a platform admin
+    reviews it and uses the existing mark-disputed tooling on the actual
+    transaction once they've identified it.
     """
     safe_name = html.escape(name)
     safe_message = html.escape(message).replace("\n", "<br>")
+    category_labels = {"dispute": "Dispute", "technical": "Technical Issue", "other": "Other", "general": "General Inquiry"}
+    category_label = category_labels.get(category, "General Inquiry")
+
+    reference_line = ""
+    if category == "dispute" and transaction_reference:
+        reference_line = f"<p><strong>Transaction reference given:</strong> {html.escape(transaction_reference)}</p>"
+
     body = _wrap(
-        "New contact form submission",
+        f"New contact form submission — {category_label}",
         f"""
         <p><strong>From:</strong> {safe_name} ({html.escape(email)})</p>
+        <p><strong>Category:</strong> {category_label}</p>
+        {reference_line}
         <p><strong>Message:</strong></p>
         <p style="white-space: pre-wrap; background: #F5F7F9; padding: 12px; border-radius: 6px;">{safe_message}</p>
         """,
     )
-    _send(settings.SMTP_FROM_EMAIL, f"New contact form message from {safe_name}", body, reply_to=email)
+    subject_prefix = "[DISPUTE] " if category == "dispute" else ""
+    _send(settings.SMTP_FROM_EMAIL, f"{subject_prefix}New contact form message from {safe_name}", body, reply_to=email)

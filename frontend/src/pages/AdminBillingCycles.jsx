@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import API from '../services/api';
+import ExportButtons from '../components/ExportButtons';
 
 const STATUS_COLORS = {
   open: { bg: 'var(--color-surface-alt)', text: 'var(--color-text-secondary)' },
@@ -18,6 +19,18 @@ function StatusPill({ status }) {
   );
 }
 
+function groupByEmployer(cycles) {
+  const groups = {};
+  for (const c of cycles) {
+    if (!groups[c.employer_id]) {
+      groups[c.employer_id] = { employerId: c.employer_id, companyName: c.employer_company_name, items: [], pendingActionCount: 0 };
+    }
+    groups[c.employer_id].items.push(c);
+    if (c.status === 'payroll_deducted') groups[c.employer_id].pendingActionCount += 1;
+  }
+  return Object.values(groups).sort((a, b) => a.companyName.localeCompare(b.companyName));
+}
+
 export default function AdminBillingCycles() {
   const [cycles, setCycles] = useState([]);
   const [filter, setFilter] = useState('payroll_deducted');
@@ -26,6 +39,8 @@ export default function AdminBillingCycles() {
   const [receivedDrafts, setReceivedDrafts] = useState({});
   const [actingId, setActingId] = useState(null);
   const [message, setMessage] = useState(null);
+  const [openEmployers, setOpenEmployers] = useState({});
+  const [openCycles, setOpenCycles] = useState({});
 
   const load = async (status) => {
     setLoading(true);
@@ -33,6 +48,10 @@ export default function AdminBillingCycles() {
       const params = status ? `?status=${status}` : '';
       const res = await API.get(`/admin/billing-cycles${params}`);
       setCycles(res.data);
+      const groups = groupByEmployer(res.data);
+      const initial = {};
+      groups.forEach((g) => { initial[g.employerId] = true; });
+      setOpenEmployers(initial);
     } catch (err) {
       console.error(err);
     } finally {
@@ -41,6 +60,9 @@ export default function AdminBillingCycles() {
   };
 
   useEffect(() => { load(filter); }, [filter]);
+
+  const toggleEmployer = (id) => setOpenEmployers((o) => ({ ...o, [id]: !o[id] }));
+  const toggleCycle = (id) => setOpenCycles((o) => ({ ...o, [id]: !o[id] }));
 
   const confirmEmployerPaid = async (cycleId, expected) => {
     const received = receivedDrafts[cycleId];
@@ -68,14 +90,19 @@ export default function AdminBillingCycles() {
     }
   };
 
+  const groups = groupByEmployer(cycles);
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', padding: '2rem', fontFamily: 'var(--font-body)' }}>
-      <div style={{ maxWidth: '820px', margin: '0 auto' }}>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)', marginBottom: '0.25rem' }}>
-          Employer Settlements — All Employers
-        </h1>
+      <div style={{ maxWidth: '860px', margin: '0 auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.25rem' }}>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)', margin: 0 }}>
+            Employer Settlements
+          </h1>
+          <ExportButtons exportPath="/admin/billing-cycles/export" extraParams={filter ? { status: filter } : {}} />
+        </div>
         <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.25rem' }}>
-          Confirm once an employer has actually remitted a cycle's amount to EEB — this is what the accounting summary counts as collected.
+          Grouped by employer. Confirm once an employer has actually remitted a cycle's amount to EEB.
         </p>
 
         {message && (
@@ -103,65 +130,105 @@ export default function AdminBillingCycles() {
 
         {loading ? (
           <p style={{ color: 'var(--color-text-secondary)' }}>Loading…</p>
-        ) : cycles.length === 0 ? (
+        ) : groups.length === 0 ? (
           <p style={{ color: 'var(--color-text-secondary)', textAlign: 'center', padding: '2rem', background: 'var(--color-surface)', borderRadius: '10px', border: '1px solid var(--color-border)' }}>
             No billing cycles in this view.
           </p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {cycles.map((c) => (
-              <div key={c.id} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                  <div>
-                    <div style={{ fontWeight: '700', color: 'var(--color-primary)' }}>{c.employer_company_name} — Cycle #{c.cycle_number}</div>
-                    <div style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
-                      {c.period_start} → {c.period_end} · Payroll date: {c.payroll_deduction_date}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {groups.map((g) => {
+              const employerOpen = !!openEmployers[g.employerId];
+              return (
+                <div key={g.employerId} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div
+                    onClick={() => toggleEmployer(g.employerId)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem', cursor: 'pointer' }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: '700', color: 'var(--color-primary)' }}>{g.companyName}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        {g.items.length} cycle{g.items.length !== 1 ? 's' : ''}
+                        {g.pendingActionCount > 0 && ` · ${g.pendingActionCount} awaiting confirmation`}
+                      </div>
                     </div>
+                    <span style={{ fontSize: '1.1rem', color: 'var(--color-text-muted)' }}>{employerOpen ? '▴' : '▾'}</span>
                   </div>
-                  <StatusPill status={c.status} />
+
+                  {employerOpen && (
+                    <div style={{ borderTop: '1px solid var(--color-border)', padding: '0.75rem 1.25rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                      {g.items.map((c) => {
+                        const cycleOpen = !!openCycles[c.id];
+                        return (
+                          <div key={c.id} style={{ background: 'var(--color-surface-alt)', borderRadius: '8px', overflow: 'hidden' }}>
+                            <div
+                              onClick={() => toggleCycle(c.id)}
+                              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 0.9rem', cursor: 'pointer' }}
+                            >
+                              <div style={{ fontSize: '0.85rem' }}>
+                                <strong>Cycle #{c.cycle_number}</strong>
+                                <span style={{ color: 'var(--color-text-muted)' }}> · {c.period_start} → {c.period_end}</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <StatusPill status={c.status} />
+                                <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>{cycleOpen ? '▴' : '▾'}</span>
+                              </div>
+                            </div>
+
+                            {cycleOpen && (
+                              <div style={{ borderTop: '1px solid var(--color-border)', padding: '0.75rem 0.9rem' }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginBottom: '0.5rem' }}>
+                                  Payroll deduction date: {c.payroll_deduction_date}
+                                </div>
+
+                                {c.status === 'employer_paid' && (
+                                  <p style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
+                                    Received £{c.employer_amount_received} of £{c.employer_amount_expected} expected
+                                    {c.employer_amount_received && c.employer_amount_expected && Number(c.employer_amount_received) < Number(c.employer_amount_expected) && (
+                                      <span style={{ color: 'var(--color-danger-text)', fontWeight: '700' }}> — shortfall £{(Number(c.employer_amount_expected) - Number(c.employer_amount_received)).toFixed(2)}</span>
+                                    )}
+                                    {' · '}Confirmed {c.employer_paid_at ? new Date(c.employer_paid_at).toLocaleString() : ''}
+                                  </p>
+                                )}
+
+                                {c.status === 'payroll_deducted' && (
+                                  <>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '0.5rem' }}>
+                                      Expected: <strong>£{c.employer_amount_expected ?? '—'}</strong>
+                                    </p>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      placeholder="Amount actually received"
+                                      value={receivedDrafts[c.id] ?? c.employer_amount_expected ?? ''}
+                                      onChange={(ev) => setReceivedDrafts((d) => ({ ...d, [c.id]: ev.target.value }))}
+                                      style={{ width: '100%', padding: '0.5rem 0.7rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
+                                    />
+                                    <input
+                                      type="text"
+                                      placeholder="Optional payment reference"
+                                      value={refDrafts[c.id] || ''}
+                                      onChange={(ev) => setRefDrafts((d) => ({ ...d, [c.id]: ev.target.value }))}
+                                      style={{ width: '100%', padding: '0.5rem 0.7rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '0.6rem', boxSizing: 'border-box' }}
+                                    />
+                                    <button
+                                      disabled={actingId === c.id}
+                                      onClick={() => confirmEmployerPaid(c.id, c.employer_amount_expected)}
+                                      style={{ padding: '0.4rem 0.9rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}
+                                    >
+                                      {actingId === c.id ? '…' : 'Confirm Employer Paid'}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-
-                {c.status === 'employer_paid' && (
-                  <p style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
-                    Received £{c.employer_amount_received} of £{c.employer_amount_expected} expected
-                    {c.employer_amount_received && c.employer_amount_expected && Number(c.employer_amount_received) < Number(c.employer_amount_expected) && (
-                      <span style={{ color: 'var(--color-danger-text)', fontWeight: '700' }}> — shortfall £{(Number(c.employer_amount_expected) - Number(c.employer_amount_received)).toFixed(2)}</span>
-                    )}
-                    {' · '}Confirmed {c.employer_paid_at ? new Date(c.employer_paid_at).toLocaleString() : ''}
-                  </p>
-                )}
-
-                {c.status === 'payroll_deducted' && (
-                  <>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '0.5rem' }}>
-                      Expected: <strong>£{c.employer_amount_expected ?? '—'}</strong>
-                    </p>
-                    <input
-                      type="number"
-                      step="0.01"
-                      placeholder="Amount actually received"
-                      value={receivedDrafts[c.id] ?? c.employer_amount_expected ?? ''}
-                      onChange={(ev) => setReceivedDrafts((d) => ({ ...d, [c.id]: ev.target.value }))}
-                      style={{ width: '100%', padding: '0.55rem 0.75rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Optional payment reference"
-                      value={refDrafts[c.id] || ''}
-                      onChange={(ev) => setRefDrafts((d) => ({ ...d, [c.id]: ev.target.value }))}
-                      style={{ width: '100%', padding: '0.55rem 0.75rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '0.75rem', boxSizing: 'border-box' }}
-                    />
-                    <button
-                      disabled={actingId === c.id}
-                      onClick={() => confirmEmployerPaid(c.id, c.employer_amount_expected)}
-                      style={{ padding: '0.45rem 1rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem' }}
-                    >
-                      {actingId === c.id ? '…' : 'Confirm Employer Paid'}
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

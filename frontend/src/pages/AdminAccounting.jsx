@@ -15,6 +15,26 @@ export default function AdminAccounting() {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const downloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      const res = await API.get('/admin/accounting/summary/pdf', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `eeb_accounting_summary_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Failed to download PDF.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -84,9 +104,18 @@ export default function AdminAccounting() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', padding: '2rem', fontFamily: 'var(--font-body)' }}>
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)', marginBottom: '0.25rem' }}>
-          Accounting Summary
-        </h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.25rem' }}>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)', margin: 0 }}>
+            Accounting Summary
+          </h1>
+          <button
+            onClick={downloadPdf}
+            disabled={downloadingPdf}
+            style={{ padding: '0.45rem 0.9rem', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontWeight: '600', fontSize: '0.82rem' }}
+          >
+            {downloadingPdf ? 'Downloading…' : 'Download PDF'}
+          </button>
+        </div>
         <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
           A daily balancing view: what's owed to us, what we owe out, what's disputed, and whether our books match the bank.
         </p>

@@ -8,7 +8,7 @@ const labelStyle = { display: 'block', marginBottom: '0.4rem', color: 'var(--col
 const fieldStyle = { marginBottom: '1rem' };
 
 export default function Contact() {
-  const [form, setForm] = useState({ name: '', email: '', message: '', honeypot: '' });
+  const [form, setForm] = useState({ name: '', email: '', category: 'general', transaction_reference: '', message: '', honeypot: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -22,7 +22,7 @@ export default function Contact() {
     try {
       await API.post('/contact', form);
       setSuccess("Thanks — we'll be in touch.");
-      setForm({ name: '', email: '', message: '', honeypot: '' });
+      setForm({ name: '', email: '', category: 'general', transaction_reference: '', message: '', honeypot: '' });
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Please try again.');
     } finally {
@@ -56,8 +56,23 @@ export default function Contact() {
               <input type="email" required value={form.email} onChange={set('email')} style={inputStyle} />
             </div>
             <div style={fieldStyle}>
+              <label style={labelStyle}>What's this about?</label>
+              <select value={form.category} onChange={set('category')} style={inputStyle}>
+                <option value="general">General Inquiry</option>
+                <option value="dispute">Dispute a Transaction</option>
+                <option value="technical">Technical Issue</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            {form.category === 'dispute' && (
+              <div style={fieldStyle}>
+                <label style={labelStyle}>Transaction reference or code (if you have it)</label>
+                <input type="text" value={form.transaction_reference} onChange={set('transaction_reference')} style={inputStyle} placeholder="e.g. the 5-character code, or approximate date and amount" />
+              </div>
+            )}
+            <div style={fieldStyle}>
               <label style={labelStyle}>Message</label>
-              <textarea required rows={5} value={form.message} onChange={set('message')} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
+              <textarea required rows={5} value={form.message} onChange={set('message')} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} placeholder={form.category === 'dispute' ? "Tell us what happened — which purchase, and why you're disputing it." : ''} />
             </div>
 
             {/* Honeypot — hidden from real users via off-screen positioning

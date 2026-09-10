@@ -78,6 +78,8 @@ class AdminTransactionView(BaseModel):
     dispute_reason: Optional[str] = None
     disputed_at: Optional[datetime] = None
     dispute_resolved_at: Optional[datetime] = None
+    dispute_outcome: Optional[str] = None
+    resolution_note: Optional[str] = None
     created_at: datetime
     approved_at: Optional[datetime] = None
 

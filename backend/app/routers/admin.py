@@ -1,5 +1,8 @@
 # backend/app/routers/admin.py
+import calendar
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 from typing import List, Optional
@@ -20,8 +23,10 @@ from app.schemas.admin import EmployerAdminView, MerchantAdminView, ApprovalDeci
 from app.schemas.employee import EmployeeAdminView, EmployeeApprovalRequest
 from app.schemas.merchant_settlement import MarkSettlementPaidRequest
 from app.schemas.transaction import AdminTransactionView
+from app.services.export import export_response
+from app.services.pdf_reports import generate_accounting_summary_pdf, generate_settlement_statement_pdf
 from app.schemas.accounting import (
-    DisputeRequest, EmployerPaymentConfirmRequest, CashPositionCreateRequest,
+    DisputeRequest, DisputeResolutionRequest, EmployerPaymentConfirmRequest, CashPositionCreateRequest,
     CashPositionView, AccountingSummaryView, AuditLogView, EmployerArrearsView, AtRiskEmployerView,
 )
 from app.services.accounting import get_accounting_summary, get_employer_arrears, get_at_risk_employers
@@ -672,6 +677,8 @@ def list_all_transactions(
             dispute_reason=txn.dispute_reason,
             disputed_at=txn.disputed_at,
             dispute_resolved_at=txn.dispute_resolved_at,
+            dispute_outcome=txn.dispute_outcome,
+            resolution_note=txn.resolution_note,
             created_at=txn.created_at,
             approved_at=txn.approved_at,
         ))
@@ -702,9 +709,22 @@ def mark_transaction_disputed(
 @router.put("/transactions/{transaction_id}/resolve-dispute")
 def resolve_transaction_dispute(
     transaction_id: str,
+    payload: DisputeResolutionRequest,
     db: Session = Depends(get_db),
     staff: User = Depends(require_platform_staff()),
 ):
+    """
+    Deliberately does NOT touch any balance, cycle total, or settlement
+    figure — resolving a dispute here is a record of the decision and
+    (for an upheld dispute) what manual action was taken, not a trigger
+    for automatic financial adjustment. Any actual correction — excluding
+    an amount from a deduction file, arranging a merchant refund — is
+    done by hand, by the admin, outside this endpoint; resolution_note is
+    where that manual action gets written down for the audit trail.
+    """
+    if payload.outcome not in ("upheld", "rejected"):
+        raise HTTPException(status_code=400, detail="outcome must be 'upheld' or 'rejected'")
+
     txn = db.query(Transaction).filter(Transaction.id == transaction_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
@@ -712,10 +732,19 @@ def resolve_transaction_dispute(
         raise HTTPException(status_code=400, detail="This transaction isn't currently disputed")
 
     txn.dispute_resolved_at = datetime.utcnow()
-    log_audit(db, staff, "transaction.resolve_dispute", "transaction", txn.id)
+    txn.dispute_outcome = payload.outcome
+    txn.resolution_note = payload.resolution_note
+
+    log_audit(db, staff, "transaction.resolve_dispute", "transaction", txn.id, details=f"outcome={payload.outcome} note={payload.resolution_note}")
+
     db.commit()
     db.refresh(txn)
-    return {"id": str(txn.id), "dispute_resolved_at": txn.dispute_resolved_at.isoformat()}
+    return {
+        "id": str(txn.id),
+        "dispute_resolved_at": txn.dispute_resolved_at.isoformat(),
+        "outcome": txn.dispute_outcome,
+        "resolution_note": txn.resolution_note,
+    }
 
 
 # --- Accounting summary + cash position (bank reconciliation) ------------
@@ -807,3 +836,116 @@ def list_audit_log(
         )
         for a in rows
     ]
+
+
+# --- Exports (CSV / XLSX / JSON) and PDF reports --------------------------
+# Dedicated endpoints rather than a format param bolted onto the existing
+# list endpoints above — keeps those endpoints' response_model behaviour
+# untouched, and export logic in one predictable place per report.
+
+@router.get("/transactions/export")
+def export_transactions(
+    format: str = Query("csv", pattern="^(csv|xlsx|json)$"),
+    is_disputed: Optional[bool] = Query(None),
+    status: Optional[TransactionStatus] = Query(None),
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    rows = [row.model_dump(mode="json") for row in list_all_transactions(is_disputed=is_disputed, status=status, db=db, _staff=_staff)]
+    return export_response(rows, "eeb_transactions", format)
+
+
+@router.get("/audit-log/export")
+def export_audit_log(
+    format: str = Query("csv", pattern="^(csv|xlsx|json)$"),
+    action: Optional[str] = Query(None),
+    entity_type: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    rows = [row.model_dump(mode="json") for row in list_audit_log(action=action, entity_type=entity_type, db=db, _staff=_staff)]
+    return export_response(rows, "eeb_audit_log", format)
+
+
+@router.get("/merchant-settlements/export")
+def export_merchant_settlements(
+    format: str = Query("csv", pattern="^(csv|xlsx|json)$"),
+    status: Optional[MerchantSettlementStatus] = Query(None),
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    rows = list_all_merchant_settlements(status=status, db=db, _staff=_staff)
+    return export_response(rows, "eeb_merchant_settlements", format)
+
+
+@router.get("/billing-cycles/export")
+def export_billing_cycles(
+    format: str = Query("csv", pattern="^(csv|xlsx|json)$"),
+    status: Optional[BillingCycleStatus] = Query(None),
+    employer_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    rows = list_all_billing_cycles(status=status, employer_id=employer_id, db=db, _staff=_staff)
+    return export_response(rows, "eeb_employer_settlements", format)
+
+
+@router.get("/accounting/summary/pdf")
+def export_accounting_summary_pdf(
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    summary = get_accounting_summary(db)
+    pdf_bytes = generate_accounting_summary_pdf(summary)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="eeb_accounting_summary_{date.today().isoformat()}.pdf"'},
+    )
+
+
+@router.get("/merchant-settlements/{settlement_id}/statement-pdf")
+def export_settlement_statement_pdf(
+    settlement_id: str,
+    db: Session = Depends(get_db),
+    _staff: User = Depends(require_platform_staff()),
+):
+    settlement = db.query(MerchantSettlement).filter(MerchantSettlement.id == settlement_id).first()
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Settlement not found")
+    merchant = db.query(Merchant).filter(Merchant.id == settlement.merchant_id).first()
+
+    start = date(settlement.period_year, settlement.period_month, 1)
+    last_day = calendar.monthrange(settlement.period_year, settlement.period_month)[1]
+    end = date(settlement.period_year, settlement.period_month, last_day)
+    txns = (
+        db.query(Transaction)
+        .filter(
+            Transaction.merchant_id == settlement.merchant_id,
+            Transaction.status == TransactionStatus.APPROVED,
+            func.date(Transaction.approved_at) >= start,
+            func.date(Transaction.approved_at) <= end,
+        )
+        .order_by(Transaction.approved_at.asc())
+        .all()
+    )
+    txn_rows = [
+        {"date": t.approved_at.strftime("%Y-%m-%d") if t.approved_at else "", "code": t.transaction_code, "amount": str(t.amount)}
+        for t in txns
+    ]
+
+    settlement_dict = {
+        "period_year": settlement.period_year,
+        "period_month": settlement.period_month,
+        "total_amount": str(settlement.total_amount),
+        "due_date": settlement.due_date.isoformat(),
+        "status": settlement.status.value,
+        "paid_at": settlement.paid_at.isoformat() if settlement.paid_at else None,
+        "paid_reference": settlement.paid_reference,
+    }
+    pdf_bytes = generate_settlement_statement_pdf(settlement_dict, merchant.business_name if merchant else "Unknown", txn_rows)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="eeb_settlement_{settlement_id[:8]}.pdf"'},
+    )

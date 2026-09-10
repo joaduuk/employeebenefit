@@ -16,6 +16,7 @@ from app.schemas.employee import EmployeeAdminView, EmployeeApprovalRequest
 from app.services.billing_cycles import get_or_create_open_cycle, close_cycle
 from app.services.payroll_export import get_cycle_deduction_breakdown, breakdown_to_csv, breakdown_to_json
 from app.services.limits import compute_spending_limit
+from app.services.export import export_response
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/employer", tags=["Employer — Employee Approvals"])
@@ -295,3 +296,26 @@ def confirm_payroll_deducted(
     db.commit()
     db.refresh(cycle)
     return {"id": str(cycle.id), "cycle_number": cycle.cycle_number, "status": cycle.status.value}
+
+
+# --- Exports (CSV / XLSX / JSON) -------------------------------------------
+
+@router.get("/employees/export")
+def export_own_employees(
+    format: str = Query("csv", pattern="^(csv|xlsx|json)$"),
+    status: Optional[ApplicationStatus] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employer")),
+):
+    rows = [row.model_dump(mode="json") for row in list_own_employees(status=status, db=db, current_user=current_user)]
+    return export_response(rows, "eeb_my_employees", format)
+
+
+@router.get("/billing-cycles/export")
+def export_own_billing_cycles(
+    format: str = Query("csv", pattern="^(csv|xlsx|json)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employer")),
+):
+    rows = list_billing_cycles(db=db, current_user=current_user)
+    return export_response(rows, "eeb_my_billing_cycles", format)

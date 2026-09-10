@@ -15,7 +15,10 @@ def submit_contact_form(payload: ContactFormRequest):
         return {"message": "Thanks — we'll be in touch."}
 
     try:
-        send_contact_form_email(payload.name, payload.email, payload.message)
+        send_contact_form_email(
+            payload.name, payload.email, payload.message,
+            category=payload.category, transaction_reference=payload.transaction_reference,
+        )
     except Exception as e:
         print(f"[EMAIL] Contact form email failed: {e}")
         raise HTTPException(

@@ -56,13 +56,20 @@ class Transaction(Base):
     employee_latitude = Column(Float, nullable=True)
     employee_longitude = Column(Float, nullable=True)
 
-    # --- Dispute tracking, added for accounting/audit reporting ---
-    # Platform-admin-marked for now (no self-service dispute submission
-    # yet) — a simple flag + reason, not a full dispute workflow.
+    # --- Dispute tracking ---
+    # Deliberately pure status/audit-trail only — resolving a dispute has
+    # NO automatic effect on any balance, cycle total, or settlement
+    # figure anywhere in the system. Any actual financial correction
+    # (excluding an amount from a deduction file, refunding a merchant)
+    # is a manual action the admin takes themselves, outside this record;
+    # resolution_note exists so that manual action is at least written
+    # down for the audit trail, not to trigger anything automatically.
     is_disputed = Column(Boolean, nullable=False, default=False)
     dispute_reason = Column(Text, nullable=True)
     disputed_at = Column(DateTime, nullable=True)
     dispute_resolved_at = Column(DateTime, nullable=True)  # NULL = still open
+    dispute_outcome = Column(String, nullable=True)  # "upheld" or "rejected"
+    resolution_note = Column(Text, nullable=True)  # what manual action was taken, if any
 
     created_at = Column(DateTime, default=datetime.utcnow)
     approved_at = Column(DateTime, nullable=True)

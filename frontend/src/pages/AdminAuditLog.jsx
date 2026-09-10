@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import API from '../services/api';
+import ExportButtons from '../components/ExportButtons';
 
 export default function AdminAuditLog() {
   const [logs, setLogs] = useState([]);
@@ -24,9 +25,12 @@ export default function AdminAuditLog() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', padding: '2rem', fontFamily: 'var(--font-body)' }}>
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)', marginBottom: '0.25rem' }}>
-          Audit Log
-        </h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.25rem' }}>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)', margin: 0 }}>
+            Audit Log
+          </h1>
+          <ExportButtons exportPath="/admin/audit-log/export" extraParams={entityType ? { entity_type: entityType } : {}} />
+        </div>
         <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.25rem' }}>
           Every significant state-changing action, most recent first.
         </p>

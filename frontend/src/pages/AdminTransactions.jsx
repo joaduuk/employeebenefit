@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import API from '../services/api';
+import ExportButtons from '../components/ExportButtons';
 
 const STATUS_COLORS = {
   pending: { bg: 'var(--color-surface-alt)', text: 'var(--color-text-secondary)' },
@@ -65,10 +66,15 @@ export default function AdminTransactions() {
     }
   };
 
-  const resolveDispute = async (id) => {
+  const resolveDispute = async (id, outcome) => {
+    let resolution_note = null;
+    if (outcome === 'upheld') {
+      resolution_note = window.prompt('What manual action did you take (or will you take)? e.g. "Excluding from next deduction file" or "Refunding merchant £X via bank transfer on 12 Sept".');
+      if (resolution_note === null) return; // cancelled
+    }
     setActingId(id);
     try {
-      await API.put(`/admin/transactions/${id}/resolve-dispute`);
+      await API.put(`/admin/transactions/${id}/resolve-dispute`, { outcome, resolution_note });
       await load();
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to resolve dispute');
@@ -80,9 +86,12 @@ export default function AdminTransactions() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', padding: '2rem', fontFamily: 'var(--font-body)' }}>
       <div style={{ maxWidth: '820px', margin: '0 auto' }}>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)', marginBottom: '0.25rem' }}>
-          Transactions — All Merchants
-        </h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.25rem' }}>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)', margin: 0 }}>
+            Transactions — All Merchants
+          </h1>
+          <ExportButtons exportPath="/admin/transactions/export" extraParams={disputedOnly ? { is_disputed: 'true' } : {}} />
+        </div>
         <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.25rem' }}>
           Tap a transaction for full detail. Mark a transaction disputed to flag it in the accounting summary.
         </p>
@@ -153,9 +162,14 @@ export default function AdminTransactions() {
                       {t.is_disputed && (
                         <div style={{ background: '#FFF9E6', border: '1px solid #FFF3CD', borderRadius: '8px', padding: '0.75rem', marginBottom: '1rem' }}>
                           <div style={{ fontWeight: '600', color: '#8A6D3B', marginBottom: '0.25rem' }}>
-                            {t.dispute_resolved_at ? 'Dispute resolved' : 'Open dispute'}
+                            {t.dispute_resolved_at ? `Dispute resolved — ${t.dispute_outcome}` : 'Open dispute'}
                           </div>
                           <div>{t.dispute_reason}</div>
+                          {t.resolution_note && (
+                            <div style={{ marginTop: '0.4rem', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
+                              <strong>Action taken:</strong> {t.resolution_note}
+                            </div>
+                          )}
                           <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
                             Raised {t.disputed_at ? new Date(t.disputed_at).toLocaleString() : ''}
                             {t.dispute_resolved_at && ` · Resolved ${new Date(t.dispute_resolved_at).toLocaleString()}`}
@@ -164,13 +178,22 @@ export default function AdminTransactions() {
                       )}
 
                       {isResolvable ? (
-                        <button
-                          disabled={actingId === t.id}
-                          onClick={() => resolveDispute(t.id)}
-                          style={{ padding: '0.45rem 1rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem' }}
-                        >
-                          {actingId === t.id ? '…' : 'Resolve Dispute'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button
+                            disabled={actingId === t.id}
+                            onClick={() => resolveDispute(t.id, 'upheld')}
+                            style={{ padding: '0.45rem 1rem', background: 'var(--color-danger-bg)', color: 'var(--color-danger-text)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem' }}
+                          >
+                            {actingId === t.id ? '…' : 'Uphold'}
+                          </button>
+                          <button
+                            disabled={actingId === t.id}
+                            onClick={() => resolveDispute(t.id, 'rejected')}
+                            style={{ padding: '0.45rem 1rem', background: 'var(--color-surface-alt)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem' }}
+                          >
+                            {actingId === t.id ? '…' : 'Reject Dispute'}
+                          </button>
+                        </div>
                       ) : !t.is_disputed && (
                         <>
                           <input

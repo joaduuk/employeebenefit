@@ -9,6 +9,11 @@ class DisputeRequest(BaseModel):
     reason: str
 
 
+class DisputeResolutionRequest(BaseModel):
+    outcome: str  # "upheld" or "rejected"
+    resolution_note: Optional[str] = None
+
+
 class EmployerPaymentConfirmRequest(BaseModel):
     amount_received: Decimal
     payment_reference: Optional[str] = None
