@@ -25,6 +25,13 @@ export default function EmployerBillingCycles() {
   const [actingId, setActingId] = useState(null);
   const [message, setMessage] = useState(null);
   const [openCycles, setOpenCycles] = useState({});
+  const [selected, setSelected] = useState({});
+  const [bulkConfirming, setBulkConfirming] = useState(false);
+
+  const [showAnchorSettings, setShowAnchorSettings] = useState(false);
+  const [anchorDate, setAnchorDate] = useState('');
+  const [savingAnchor, setSavingAnchor] = useState(false);
+  const [anchorMessage, setAnchorMessage] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -42,6 +49,7 @@ export default function EmployerBillingCycles() {
   useEffect(() => { load(); }, []);
 
   const toggleCycle = (id) => setOpenCycles((o) => ({ ...o, [id]: !o[id] }));
+  const toggleSelected = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }));
 
   const closeCycleNow = async (id) => {
     setActingId(id);
@@ -71,9 +79,46 @@ export default function EmployerBillingCycles() {
     }
   };
 
+  const bulkConfirmSelected = async () => {
+    const cycleIds = Object.keys(selected).filter((id) => selected[id]);
+    if (cycleIds.length === 0) return;
+    setBulkConfirming(true);
+    setMessage(null);
+    try {
+      const res = await API.put('/employer/billing-cycles/bulk-confirm-payroll-deducted', { cycle_ids: cycleIds });
+      setMessage(`Confirmed ${res.data.confirmed.length} cycle${res.data.confirmed.length !== 1 ? 's' : ''} — employee balances cleared for each.`);
+      setSelected({});
+      await load();
+    } catch (err) {
+      setMessage(err.response?.data?.detail || 'Failed to bulk confirm');
+    } finally {
+      setBulkConfirming(false);
+    }
+  };
+
+  const saveAnchorDate = async () => {
+    if (!anchorDate) {
+      setAnchorMessage('Pick a date first.');
+      return;
+    }
+    setSavingAnchor(true);
+    setAnchorMessage(null);
+    try {
+      await API.put('/employer/payroll-anchor-date', { payroll_anchor_date: anchorDate });
+      setAnchorMessage('Saved — this only affects cycles created from now on.');
+    } catch (err) {
+      setAnchorMessage(err.response?.data?.detail || 'Failed to save');
+    } finally {
+      setSavingAnchor(false);
+    }
+  };
+
   const downloadFile = (id, format) => {
     window.open(`${API.defaults.baseURL}/employer/billing-cycle/${id}/deduction-file?format=${format}`, '_blank');
   };
+
+  const selectedCount = Object.values(selected).filter(Boolean).length;
+  const closedCycles = cycles.filter((c) => c.status === 'closed');
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', padding: '2rem', fontFamily: 'var(--font-body)' }}>
@@ -84,13 +129,63 @@ export default function EmployerBillingCycles() {
           </h1>
           <ExportButtons exportPath="/employer/billing-cycles/export" />
         </div>
-        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.25rem' }}>
+        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
           Click a cycle to see the deduction file and available actions.
         </p>
+
+        <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', marginBottom: '1.25rem', overflow: 'hidden' }}>
+          <div
+            onClick={() => setShowAnchorSettings((v) => !v)}
+            style={{ padding: '0.85rem 1.1rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.88rem', fontWeight: '600', color: 'var(--color-primary)' }}
+          >
+            Payroll Settings (only relevant if you pay fortnightly)
+            <span style={{ color: 'var(--color-text-muted)' }}>{showAnchorSettings ? '▴' : '▾'}</span>
+          </div>
+          {showAnchorSettings && (
+            <div style={{ borderTop: '1px solid var(--color-border)', padding: '1rem 1.1rem' }}>
+              <p style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', marginBottom: '0.75rem' }}>
+                If you pay staff fortnightly, enter any date that was an actual payroll date — this tells us which week is the "on" week, so future cycles land on the right Friday (or whichever day you pay), not just every 7 days.
+              </p>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <input
+                  type="date"
+                  value={anchorDate}
+                  onChange={(e) => setAnchorDate(e.target.value)}
+                  style={{ padding: '0.5rem 0.7rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '0.85rem' }}
+                />
+                <button
+                  disabled={savingAnchor}
+                  onClick={saveAnchorDate}
+                  style={{ padding: '0.5rem 1rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem' }}
+                >
+                  {savingAnchor ? '…' : 'Save'}
+                </button>
+              </div>
+              {anchorMessage && <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: '0.5rem' }}>{anchorMessage}</p>}
+            </div>
+          )}
+        </div>
 
         {message && (
           <div style={{ background: 'var(--color-surface-alt)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem', color: 'var(--color-text)' }}>
             {message}
+          </div>
+        )}
+
+        {closedCycles.length > 1 && (
+          <div style={{ background: 'var(--color-surface-alt)', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+              {selectedCount > 0 ? `${selectedCount} cycle${selectedCount !== 1 ? 's' : ''} selected` : 'Select multiple closed cycles below to confirm them all at once'}
+            </span>
+            {selectedCount > 0 && (
+              <button
+                disabled={bulkConfirming}
+                onClick={bulkConfirmSelected}
+                style={{ padding: '0.45rem 1rem', background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}
+              >
+                {bulkConfirming ? '…' : `Confirm ${selectedCount} Selected`}
+              </button>
+            )}
           </div>
         )}
 
@@ -106,17 +201,28 @@ export default function EmployerBillingCycles() {
               const isOpen = !!openCycles[c.id];
               return (
                 <div key={c.id} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '10px', overflow: 'hidden' }}>
-                  <div
-                    onClick={() => toggleCycle(c.id)}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem', cursor: 'pointer' }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: '700', color: 'var(--color-primary)' }}>Cycle #{c.cycle_number}</div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{c.period_start} → {c.period_end}</div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <StatusPill status={c.status} />
-                      <span style={{ fontSize: '1.1rem', color: 'var(--color-text-muted)' }}>{isOpen ? '▴' : '▾'}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '1rem 1.25rem', gap: '0.75rem' }}>
+                    {c.status === 'closed' && (
+                      <input
+                        type="checkbox"
+                        checked={!!selected[c.id]}
+                        onChange={() => toggleSelected(c.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer', flexShrink: 0 }}
+                      />
+                    )}
+                    <div
+                      onClick={() => toggleCycle(c.id)}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flex: 1, cursor: 'pointer' }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: '700', color: 'var(--color-primary)' }}>Cycle #{c.cycle_number}</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{c.period_start} → {c.period_end}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <StatusPill status={c.status} />
+                        <span style={{ fontSize: '1.1rem', color: 'var(--color-text-muted)' }}>{isOpen ? '▴' : '▾'}</span>
+                      </div>
                     </div>
                   </div>
 

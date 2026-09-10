@@ -4,7 +4,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.database import SessionLocal
 from app.models.billing_cycle import BillingCycle, BillingCycleStatus
+from app.models.employer import Employer
+from app.models.user import User
 from app.services.billing_cycles import close_cycle
+from app.core.email import send_billing_cycle_closed_email
 
 _scheduler = None
 
@@ -18,6 +21,10 @@ def close_due_billing_cycles():
     the cycle so a fresh one starts for new spending, and makes it
     eligible for the employer to download a deduction file and later
     confirm payroll deduction — see routers/employer.py.
+
+    Notifies the employer once the cycle is safely committed — same
+    notification as the manual "Close Now" button, so it fires
+    consistently regardless of which path closed the cycle.
     """
     db = SessionLocal()
     try:
@@ -36,6 +43,17 @@ def close_due_billing_cycles():
             )
         if due_cycles:
             db.commit()
+            for cycle in due_cycles:
+                employer = db.query(Employer).filter(Employer.id == cycle.employer_id).first()
+                admin_user = db.query(User).filter(User.id == employer.admin_user_id).first() if employer else None
+                if admin_user:
+                    try:
+                        send_billing_cycle_closed_email(
+                            admin_user.email, admin_user.full_name, cycle.cycle_number,
+                            cycle.period_start.isoformat(), cycle.period_end.isoformat(), cycle.employer_amount_expected,
+                        )
+                    except Exception as e:
+                        print(f"[EMAIL] cycle closed notification failed: {e}")
     finally:
         db.close()
 

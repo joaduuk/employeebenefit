@@ -6,10 +6,12 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.merchant import Merchant
+from app.models.user import User
 from app.models.transaction import Transaction, TransactionStatus
 from app.models.merchant_settlement import MerchantSettlement
 from app.models.billing_cycle import BillingCycle, BillingCycleStatus
 from app.models.approval import ApplicationStatus
+from app.core.email import send_settlement_generated_email
 
 
 def _previous_month(today: date) -> tuple:
@@ -98,6 +100,8 @@ def generate_due_settlements(db: Session):
     previous calendar month. Idempotent — checks for an existing row per
     merchant/period before creating, so it's safe to run daily without
     ever double-generating a settlement.
+
+    Notifies each merchant once their new settlement is safely committed.
     """
     today = date.today()
     year, month = _previous_month(today)
@@ -129,8 +133,16 @@ def generate_due_settlements(db: Session):
             due_date=_last_day_of_month_after(year, month),
         )
         db.add(settlement)
-        created.append(settlement)
+        created.append((settlement, merchant))
 
     if created:
         db.commit()
+        for settlement, merchant in created:
+            owner_user = db.query(User).filter(User.id == merchant.user_id).first()
+            if owner_user:
+                period_label = f"{calendar.month_name[settlement.period_month]} {settlement.period_year}"
+                try:
+                    send_settlement_generated_email(owner_user.email, merchant.business_name, period_label, settlement.total_amount, settlement.due_date.isoformat())
+                except Exception as e:
+                    print(f"[EMAIL] settlement generated notification failed: {e}")
     return created

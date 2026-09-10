@@ -1,5 +1,6 @@
 # backend/app/routers/merchant.py
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -20,6 +21,11 @@ router = APIRouter(prefix="/merchant", tags=["Merchant — Transactions"])
 # must ask for a new one. Kept as a plain constant for day 1 — move to
 # config if this needs to differ per merchant or be tuned in production.
 TRANSACTION_TTL_SECONDS = 300
+
+
+class MerchantLocationUpdateRequest(BaseModel):
+    latitude: float
+    longitude: float
 
 
 def _get_own_merchant(current_user: User, db: Session) -> Merchant:
@@ -64,6 +70,37 @@ def _to_view(txn: Transaction, merchant: Merchant, db: Session) -> TransactionVi
         approved_at=txn.approved_at,
         expires_at=txn.expires_at,
     )
+
+
+@router.get("/location")
+def get_merchant_location(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("merchant")),
+):
+    merchant = _get_own_merchant(current_user, db)
+    return {"latitude": merchant.latitude, "longitude": merchant.longitude}
+
+
+@router.put("/location")
+def set_merchant_location(
+    payload: MerchantLocationUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("merchant")),
+):
+    """
+    Sets the merchant's permanent stored location — captured once
+    (ideally while the merchant is physically at their shop), then reused
+    for every future transaction (see create_transaction below), rather
+    than requiring a live GPS capture on every single sale. Merchants
+    don't move; this reflects that, and sidesteps the reliability problem
+    of depending on a working GPS signal at checkout time, every time.
+    """
+    merchant = _get_own_merchant(current_user, db)
+    merchant.latitude = payload.latitude
+    merchant.longitude = payload.longitude
+    db.commit()
+    db.refresh(merchant)
+    return {"latitude": merchant.latitude, "longitude": merchant.longitude}
 
 
 @router.post("/transactions", response_model=TransactionView)

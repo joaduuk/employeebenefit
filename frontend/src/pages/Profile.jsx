@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import API from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const API_ORIGIN = new URL(API.defaults.baseURL).origin;
 const fullPhotoUrl = (path) => (path ? `${API_ORIGIN}${path}` : null);
 
 export default function Profile() {
+  const { user } = useAuth();
   const [profile, setProfile] = useState(null);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -14,6 +16,13 @@ export default function Profile() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const fileInputRef = useRef(null);
+
+  const [merchantLocation, setMerchantLocation] = useState(null);
+  const [settingLocation, setSettingLocation] = useState(false);
+  const [locationError, setLocationError] = useState(null);
+  const [locationSuccess, setLocationSuccess] = useState(null);
+
+  const isMerchant = user?.role === 'merchant';
 
   const load = async () => {
     setLoading(true);
@@ -29,7 +38,20 @@ export default function Profile() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  const loadMerchantLocation = async () => {
+    try {
+      const res = await API.get('/merchant/location');
+      setMerchantLocation(res.data);
+    } catch (err) {
+      // fine — just means it's not been set yet, or a transient error
+    }
+  };
+
+  useEffect(() => {
+    load();
+    if (isMerchant) loadMerchantLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const saveDetails = async (e) => {
     e.preventDefault();
@@ -81,6 +103,37 @@ export default function Profile() {
     }
   };
 
+  const setShopLocation = () => {
+    setLocationError(null);
+    setLocationSuccess(null);
+    if (!navigator.geolocation) {
+      setLocationError('Location isn\u2019t available on this device/browser.');
+      return;
+    }
+    setSettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const res = await API.put('/merchant/location', {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          setMerchantLocation(res.data);
+          setLocationSuccess('Shop location saved.');
+        } catch (err) {
+          setLocationError(err.response?.data?.detail || 'Failed to save location.');
+        } finally {
+          setSettingLocation(false);
+        }
+      },
+      () => {
+        setLocationError('Location access was denied or unavailable. You can try again any time.');
+        setSettingLocation(false);
+      },
+      { timeout: 8000 }
+    );
+  };
+
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--color-bg)', padding: '2rem', fontFamily: 'var(--font-body)' }}>
@@ -88,6 +141,8 @@ export default function Profile() {
       </div>
     );
   }
+
+  const hasLocation = merchantLocation?.latitude != null && merchantLocation?.longitude != null;
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', padding: '2rem', fontFamily: 'var(--font-body)' }}>
@@ -172,6 +227,38 @@ export default function Profile() {
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
         </form>
+
+        {isMerchant && (
+          <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border)' }}>
+            <h2 style={{ fontSize: '1rem', fontFamily: 'var(--font-heading)', fontWeight: '400', color: 'var(--color-primary)', marginBottom: '0.5rem' }}>
+              Shop Location
+            </h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', marginBottom: '0.75rem' }}>
+              Set this once, ideally while you're physically at your shop — every future transaction uses this saved location automatically, so you never need to share your location again at checkout.
+            </p>
+
+            {hasLocation ? (
+              <p style={{ fontSize: '0.82rem', color: 'var(--color-success-text)', marginBottom: '0.75rem' }}>
+                ✓ Location saved ({merchantLocation.latitude.toFixed(5)}, {merchantLocation.longitude.toFixed(5)})
+              </p>
+            ) : (
+              <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
+                Not set yet — tap below while you're at your shop.
+              </p>
+            )}
+
+            {locationError && <p style={{ color: 'var(--color-danger-text)', fontSize: '0.82rem', marginBottom: '0.75rem' }}>{locationError}</p>}
+            {locationSuccess && <p style={{ color: 'var(--color-success-text)', fontSize: '0.82rem', marginBottom: '0.75rem' }}>{locationSuccess}</p>}
+
+            <button
+              onClick={setShopLocation}
+              disabled={settingLocation}
+              style={{ width: '100%', padding: '0.65rem', background: 'var(--color-surface-alt)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}
+            >
+              {settingLocation ? 'Getting location…' : hasLocation ? 'Update My Shop\u2019s Location' : 'Set My Shop\u2019s Location'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

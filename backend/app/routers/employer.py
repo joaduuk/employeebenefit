@@ -1,8 +1,9 @@
 # backend/app/routers/employer.py
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Optional
 
 from app.core.database import get_db
@@ -17,9 +18,21 @@ from app.services.billing_cycles import get_or_create_open_cycle, close_cycle
 from app.services.payroll_export import get_cycle_deduction_breakdown, breakdown_to_csv, breakdown_to_json
 from app.services.limits import compute_spending_limit
 from app.services.export import export_response
+from app.core.email import (
+    send_application_approved_email, send_application_rejected_email, send_account_suspended_email,
+    send_billing_cycle_closed_email,
+)
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/employer", tags=["Employer — Employee Approvals"])
+
+
+class PayrollAnchorDateRequest(BaseModel):
+    payroll_anchor_date: date
+
+
+class BulkConfirmRequest(BaseModel):
+    cycle_ids: List[str]
 
 
 def _get_own_employer(current_user: User, db: Session) -> Employer:
@@ -141,6 +154,10 @@ def approve_employee(
     db.refresh(profile)
 
     user = db.query(User).filter(User.id == profile.user_id).first()
+    try:
+        send_application_approved_email(user.email, user.full_name, f"Your EEB benefit is now active with a monthly spending limit of £{computed_limit}.")
+    except Exception as e:
+        print(f"[EMAIL] employee approved notification failed: {e}")
     return _to_employee_view(profile, user, employer)
 
 
@@ -169,6 +186,10 @@ def reject_employee(
     db.refresh(profile)
 
     user = db.query(User).filter(User.id == profile.user_id).first()
+    try:
+        send_application_rejected_email(user.email, user.full_name, payload.decision_note)
+    except Exception as e:
+        print(f"[EMAIL] employee rejected notification failed: {e}")
     return _to_employee_view(profile, user, employer)
 
 
@@ -199,6 +220,10 @@ def suspend_employee(
     db.refresh(profile)
 
     user = db.query(User).filter(User.id == profile.user_id).first()
+    try:
+        send_account_suspended_email(user.email, user.full_name, payload.decision_note)
+    except Exception as e:
+        print(f"[EMAIL] employee suspended notification failed: {e}")
     return _to_employee_view(profile, user, employer)
 
 
@@ -277,6 +302,15 @@ def close_cycle_now(
     log_audit(db, current_user, "billing_cycle.close_now", "billing_cycle", cycle.id, details=f"expected=£{cycle.employer_amount_expected}")
     db.commit()
     db.refresh(cycle)
+
+    try:
+        send_billing_cycle_closed_email(
+            current_user.email, current_user.full_name, cycle.cycle_number,
+            cycle.period_start.isoformat(), cycle.period_end.isoformat(), cycle.employer_amount_expected,
+        )
+    except Exception as e:
+        print(f"[EMAIL] cycle closed notification failed: {e}")
+
     return {"id": str(cycle.id), "cycle_number": cycle.cycle_number, "status": cycle.status.value}
 
 
@@ -319,3 +353,63 @@ def export_own_billing_cycles(
 ):
     rows = list_billing_cycles(db=db, current_user=current_user)
     return export_response(rows, "eeb_my_billing_cycles", format)
+
+
+# --- Fortnightly payroll anchor date -----------------------------------
+
+@router.put("/payroll-anchor-date")
+def set_payroll_anchor_date(
+    payload: PayrollAnchorDateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employer")),
+):
+    """
+    Only meaningful for FORTNIGHTLY employers — resolves which of two
+    possible weeks is the "on" week by giving the system a real past
+    payroll date to count 14-day periods forward from. Safe to change
+    later if it was set incorrectly; only affects future cycle
+    calculations, never rewrites cycles that already exist.
+    """
+    employer = _get_own_employer(current_user, db)
+    employer.payroll_anchor_date = payload.payroll_anchor_date
+    log_audit(db, current_user, "employer.set_payroll_anchor_date", "employer", employer.id, details=str(payload.payroll_anchor_date))
+    db.commit()
+    return {"payroll_anchor_date": employer.payroll_anchor_date.isoformat()}
+
+
+# --- Bulk actions (reduces repeat clicking for frequent payroll cycles) ---
+
+@router.put("/billing-cycles/bulk-confirm-payroll-deducted")
+def bulk_confirm_payroll_deducted(
+    payload: BulkConfirmRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("employer")),
+):
+    """
+    Confirms multiple CLOSED cycles as PAYROLL_DEDUCTED in one action —
+    aimed at weekly/fortnightly employers who'd otherwise need to click
+    through several small cycles individually. Silently skips any
+    cycle_id that isn't actually CLOSED or doesn't belong to this
+    employer, rather than failing the whole batch over one bad entry.
+    """
+    employer = _get_own_employer(current_user, db)
+    cycles = (
+        db.query(BillingCycle)
+        .filter(
+            BillingCycle.id.in_(payload.cycle_ids),
+            BillingCycle.employer_id == employer.id,
+            BillingCycle.status == BillingCycleStatus.CLOSED,
+        )
+        .all()
+    )
+    confirmed_ids = []
+    for cycle in cycles:
+        cycle.status = BillingCycleStatus.PAYROLL_DEDUCTED
+        confirmed_ids.append(str(cycle.id))
+
+    if confirmed_ids:
+        log_audit(db, current_user, "billing_cycle.bulk_confirm_payroll_deducted", "billing_cycle", None, details=f"{len(confirmed_ids)} cycles: {', '.join(confirmed_ids)}")
+        db.commit()
+
+    skipped = [cid for cid in payload.cycle_ids if cid not in confirmed_ids]
+    return {"confirmed": confirmed_ids, "skipped": skipped}

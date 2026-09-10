@@ -31,10 +31,7 @@ def _next_monthly_date(day: int, after: date) -> date:
 def _next_weekday_date(weekday: int, after: date) -> date:
     """
     Next occurrence of a weekday (0=Mon..6=Sun) strictly after `after`.
-    Used for both WEEKLY and FORTNIGHTLY — FORTNIGHTLY has no stored anchor
-    date to know which week is the "on" week, so it currently behaves
-    identically to WEEKLY. Revisit once Employer has a reference date for
-    fortnightly cadence.
+    Used for WEEKLY.
     """
     days_ahead = (weekday - after.weekday()) % 7
     if days_ahead == 0:
@@ -42,9 +39,35 @@ def _next_weekday_date(weekday: int, after: date) -> date:
     return after + timedelta(days=days_ahead)
 
 
+def _next_fortnightly_date(anchor_date: date, after: date) -> date:
+    """
+    Next date that is exactly N x 14 days after anchor_date, strictly
+    after `after`. anchor_date is any real date that WAS an actual
+    payroll date — it resolves the ambiguity of which of two possible
+    weeks is the "on" week, which plain weekday matching can never do
+    for a genuinely fortnightly cadence.
+
+    Falls back to a flat 14-day-from-today guess if no anchor has been
+    set yet — better than crashing, but this is exactly the situation an
+    anchor date is meant to prevent, so employers should be prompted to
+    set one via PUT /employer/payroll-anchor-date.
+    """
+    if anchor_date is None:
+        return after + timedelta(days=14)
+
+    days_since_anchor = (after - anchor_date).days
+    periods_elapsed = days_since_anchor // 14
+    candidate = anchor_date + timedelta(days=(periods_elapsed + 1) * 14)
+    while candidate <= after:
+        candidate += timedelta(days=14)
+    return candidate
+
+
 def _compute_payroll_deduction_date(employer: Employer, after: date) -> date:
     if employer.payroll_frequency == PayrollFrequency.MONTHLY:
         return _next_monthly_date(employer.payroll_day, after)
+    if employer.payroll_frequency == PayrollFrequency.FORTNIGHTLY:
+        return _next_fortnightly_date(employer.payroll_anchor_date, after)
     return _next_weekday_date(employer.payroll_day, after)
 
 

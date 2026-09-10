@@ -25,6 +25,10 @@ from app.schemas.merchant_settlement import MarkSettlementPaidRequest
 from app.schemas.transaction import AdminTransactionView
 from app.services.export import export_response
 from app.services.pdf_reports import generate_accounting_summary_pdf, generate_settlement_statement_pdf
+from app.core.email import (
+    send_application_approved_email, send_application_rejected_email, send_account_suspended_email,
+    send_settlement_paid_email,
+)
 from app.schemas.accounting import (
     DisputeRequest, DisputeResolutionRequest, EmployerPaymentConfirmRequest, CashPositionCreateRequest,
     CashPositionView, AccountingSummaryView, AuditLogView, EmployerArrearsView, AtRiskEmployerView,
@@ -106,6 +110,10 @@ def approve_employer(
     db.refresh(employer)
 
     admin_user = db.query(User).filter(User.id == employer.admin_user_id).first()
+    try:
+        send_application_approved_email(admin_user.email, admin_user.full_name, "Your company account is approved — you can now review and approve employees to start using their EEB benefit.")
+    except Exception as e:
+        print(f"[EMAIL] employer approved notification failed: {e}")
     return _to_admin_view(employer, admin_user)
 
 
@@ -130,6 +138,10 @@ def reject_employer(
     db.refresh(employer)
 
     admin_user = db.query(User).filter(User.id == employer.admin_user_id).first()
+    try:
+        send_application_rejected_email(admin_user.email, admin_user.full_name, payload.decision_note)
+    except Exception as e:
+        print(f"[EMAIL] employer rejected notification failed: {e}")
     return _to_admin_view(employer, admin_user)
 
 
@@ -156,6 +168,10 @@ def suspend_employer(
     db.refresh(employer)
 
     admin_user = db.query(User).filter(User.id == employer.admin_user_id).first()
+    try:
+        send_account_suspended_email(admin_user.email, admin_user.full_name, payload.decision_note)
+    except Exception as e:
+        print(f"[EMAIL] employer suspended notification failed: {e}")
     return _to_admin_view(employer, admin_user)
 
 
@@ -233,6 +249,10 @@ def approve_merchant(
     db.refresh(merchant)
 
     owner_user = db.query(User).filter(User.id == merchant.user_id).first()
+    try:
+        send_application_approved_email(owner_user.email, owner_user.full_name, "Your merchant account is approved — you can now start accepting EEB payments.")
+    except Exception as e:
+        print(f"[EMAIL] merchant approved notification failed: {e}")
     return _to_merchant_admin_view(merchant, owner_user)
 
 
@@ -258,6 +278,10 @@ def reject_merchant(
     db.refresh(merchant)
 
     owner_user = db.query(User).filter(User.id == merchant.user_id).first()
+    try:
+        send_application_rejected_email(owner_user.email, owner_user.full_name, payload.decision_note)
+    except Exception as e:
+        print(f"[EMAIL] merchant rejected notification failed: {e}")
     return _to_merchant_admin_view(merchant, owner_user)
 
 
@@ -285,6 +309,10 @@ def suspend_merchant(
     db.refresh(merchant)
 
     owner_user = db.query(User).filter(User.id == merchant.user_id).first()
+    try:
+        send_account_suspended_email(owner_user.email, owner_user.full_name, payload.decision_note)
+    except Exception as e:
+        print(f"[EMAIL] merchant suspended notification failed: {e}")
     return _to_merchant_admin_view(merchant, owner_user)
 
 
@@ -419,6 +447,10 @@ def approve_employee_override(
 
     user = db.query(User).filter(User.id == profile.user_id).first()
     employer = db.query(Employer).filter(Employer.id == profile.employer_id).first()
+    try:
+        send_application_approved_email(user.email, user.full_name, f"Your EEB benefit is now active with a monthly spending limit of £{computed_limit}.")
+    except Exception as e:
+        print(f"[EMAIL] employee approved notification failed: {e}")
     return _to_employee_admin_view(profile, user, employer)
 
 
@@ -443,6 +475,10 @@ def reject_employee_override(
 
     user = db.query(User).filter(User.id == profile.user_id).first()
     employer = db.query(Employer).filter(Employer.id == profile.employer_id).first()
+    try:
+        send_application_rejected_email(user.email, user.full_name, payload.decision_note)
+    except Exception as e:
+        print(f"[EMAIL] employee rejected notification failed: {e}")
     return _to_employee_admin_view(profile, user, employer)
 
 
@@ -469,6 +505,10 @@ def suspend_employee_override(
 
     user = db.query(User).filter(User.id == profile.user_id).first()
     employer = db.query(Employer).filter(Employer.id == profile.employer_id).first()
+    try:
+        send_account_suspended_email(user.email, user.full_name, payload.decision_note)
+    except Exception as e:
+        print(f"[EMAIL] employee suspended notification failed: {e}")
     return _to_employee_admin_view(profile, user, employer)
 
 
@@ -524,6 +564,21 @@ def mark_settlement_paid(
     log_audit(db, staff, "merchant_settlement.mark_paid", "merchant_settlement", settlement.id, details=f"£{settlement.total_amount} ref={payload.paid_reference}")
     db.commit()
     db.refresh(settlement)
+
+    row = (
+        db.query(Merchant, User)
+        .join(User, Merchant.user_id == User.id)
+        .filter(Merchant.id == settlement.merchant_id)
+        .first()
+    )
+    if row:
+        merchant, owner_user = row
+        period_label = f"{calendar.month_name[settlement.period_month]} {settlement.period_year}"
+        try:
+            send_settlement_paid_email(owner_user.email, merchant.business_name, period_label, settlement.total_amount, payload.paid_reference)
+        except Exception as e:
+            print(f"[EMAIL] settlement paid notification failed: {e}")
+
     return {"id": str(settlement.id), "status": settlement.status.value}
 
 

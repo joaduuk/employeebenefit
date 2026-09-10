@@ -125,3 +125,79 @@ def send_contact_form_email(name: str, email: str, message: str, category: str =
     )
     subject_prefix = "[DISPUTE] " if category == "dispute" else ""
     _send(settings.SMTP_FROM_EMAIL, f"{subject_prefix}New contact form message from {safe_name}", body, reply_to=email)
+
+
+# --- Lifecycle notifications -----------------------------------------------
+# Approval decisions, billing cycle transitions, and settlement events.
+# Kept intentionally simple — one shared template per outcome type, with a
+# role/context-specific line, rather than a template per role.
+
+def send_application_approved_email(to_email: str, full_name: str, context_line: str) -> None:
+    body = _wrap(
+        f"You're approved, {full_name}!",
+        f"<p>{context_line}</p>",
+    )
+    _send(to_email, "Your EEB application has been approved", body)
+
+
+def send_application_rejected_email(to_email: str, full_name: str, decision_note: str = None) -> None:
+    note_html = f'<p style="color: #8A94A0;">Note: {html.escape(decision_note)}</p>' if decision_note else ""
+    body = _wrap(
+        "Application update",
+        f"""
+        <p>Hi {full_name}, your EEB application wasn't approved this time.</p>
+        {note_html}
+        <p>If you think this is a mistake, reply to this email and we'll take another look.</p>
+        """,
+    )
+    _send(to_email, "Update on your EEB application", body)
+
+
+def send_account_suspended_email(to_email: str, full_name: str, decision_note: str = None) -> None:
+    note_html = f'<p style="color: #8A94A0;">Note: {html.escape(decision_note)}</p>' if decision_note else ""
+    body = _wrap(
+        "Account suspended",
+        f"""
+        <p>Hi {full_name}, your EEB account has been suspended.</p>
+        {note_html}
+        <p>If you have questions, reply to this email.</p>
+        """,
+    )
+    _send(to_email, "Your EEB account has been suspended", body)
+
+
+def send_billing_cycle_closed_email(to_email: str, full_name: str, cycle_number: int, period_start: str, period_end: str, amount) -> None:
+    body = _wrap(
+        "Billing cycle closed",
+        f"""
+        <p>Hi {full_name}, cycle #{cycle_number} ({period_start} to {period_end}) has closed.</p>
+        <p><strong>Total to deduct: £{amount}</strong></p>
+        <p>Log in to download the deduction file and confirm once payroll has run.</p>
+        """,
+    )
+    _send(to_email, f"EEB — Cycle #{cycle_number} closed, deduction file ready", body)
+
+
+def send_settlement_generated_email(to_email: str, business_name: str, period_label: str, amount, due_date: str) -> None:
+    body = _wrap(
+        "New settlement generated",
+        f"""
+        <p>Hi {business_name}, your EEB settlement for {period_label} is ready.</p>
+        <p><strong>Amount: £{amount}</strong></p>
+        <p>Due date: {due_date}</p>
+        """,
+    )
+    _send(to_email, f"EEB — Settlement ready for {period_label}", body)
+
+
+def send_settlement_paid_email(to_email: str, business_name: str, period_label: str, amount, paid_reference: str = None) -> None:
+    reference_line = f"<p>Reference: {html.escape(paid_reference)}</p>" if paid_reference else ""
+    body = _wrap(
+        "Settlement paid",
+        f"""
+        <p>Hi {business_name}, your EEB settlement for {period_label} has been paid.</p>
+        <p><strong>Amount: £{amount}</strong></p>
+        {reference_line}
+        """,
+    )
+    _send(to_email, f"EEB — Settlement for {period_label} paid", body)

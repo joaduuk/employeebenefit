@@ -3,7 +3,7 @@ import uuid
 import enum
 from datetime import datetime
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Enum as SAEnum, Numeric, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Date, Enum as SAEnum, Numeric, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
@@ -43,6 +43,13 @@ class Employer(Base, ApprovalAuditMixin):
     payroll_frequency = Column(SAEnum(PayrollFrequency), nullable=False, default=PayrollFrequency.MONTHLY)
     # For MONTHLY: day of month (1-31). For WEEKLY/FORTNIGHTLY: weekday (0=Mon..6=Sun).
     payroll_day = Column(Integer, nullable=False)
+    # Required for FORTNIGHTLY only — any real date that WAS an actual
+    # payroll date, used as a reference point to count 14-day periods
+    # forward from. Without this, there's no way to know which of two
+    # possible weeks is the "on" week for a fortnightly cadence — that
+    # ambiguity is exactly why FORTNIGHTLY previously behaved identically
+    # to WEEKLY. Meaningless for WEEKLY/MONTHLY employers, left null.
+    payroll_anchor_date = Column(Date, nullable=True)
 
     # --- Cycle timing ---
     # "The spending cycle closes one business day before the employer's

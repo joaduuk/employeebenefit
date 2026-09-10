@@ -181,9 +181,13 @@ export default function EmployeePay() {
         {lookup && !result && (
           <div style={{ textAlign: 'center' }}>
             <p style={{ color: 'var(--color-text-secondary)', marginBottom: '0.25rem' }}>{lookup.business_name}</p>
-            <div style={{ fontSize: '2.25rem', fontWeight: '700', color: 'var(--color-primary)', marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: '2.25rem', fontWeight: '700', color: 'var(--color-primary)', marginBottom: '1rem' }}>
               £{lookup.amount}
             </div>
+
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.78rem', marginBottom: '1.25rem' }}>
+              📍 If prompted, allowing location access helps protect you — it gives us evidence to support you if this purchase is ever disputed. Entirely optional.
+            </p>
 
             {error && (
               <p style={{ color: 'var(--color-danger-text)', fontSize: '0.85rem', marginBottom: '1rem' }}>{error}</p>
