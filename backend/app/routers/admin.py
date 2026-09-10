@@ -728,6 +728,7 @@ def list_all_transactions(
             employee_full_name=employee_name,
             employer_company_name=employer_name,
             billing_cycle_status=cycle_status,
+            location_distance_meters=txn.location_distance_meters,
             is_disputed=txn.is_disputed,
             dispute_reason=txn.dispute_reason,
             disputed_at=txn.disputed_at,

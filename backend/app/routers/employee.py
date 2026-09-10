@@ -15,6 +15,7 @@ from app.schemas.transaction import TransactionLookupView, TransactionDecisionRe
 from app.schemas.employee import EmployeeBalanceView
 from app.services.limits import check_transaction_allowed, get_outstanding_balance
 from app.services.billing_cycles import get_or_create_open_cycle
+from app.services.geo import haversine_distance_meters
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/employee", tags=["Employee — Transactions"])
@@ -135,6 +136,15 @@ def approve_transaction(
         txn.employee_latitude = payload.latitude
     if payload.longitude is not None:
         txn.employee_longitude = payload.longitude
+
+    if (
+        txn.employee_latitude is not None and txn.employee_longitude is not None
+        and txn.merchant_latitude is not None and txn.merchant_longitude is not None
+    ):
+        txn.location_distance_meters = haversine_distance_meters(
+            txn.merchant_latitude, txn.merchant_longitude,
+            txn.employee_latitude, txn.employee_longitude,
+        )
 
     allowed, reason = check_transaction_allowed(db, profile, employer, merchant, txn.amount)
     if not allowed:

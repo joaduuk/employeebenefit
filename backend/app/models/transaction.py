@@ -55,6 +55,14 @@ class Transaction(Base):
     merchant_longitude = Column(Float, nullable=True)
     employee_latitude = Column(Float, nullable=True)
     employee_longitude = Column(Float, nullable=True)
+    # Great-circle distance between merchant and employee at the moment of
+    # approval, in metres — computed once and stored, not enforced against
+    # anything. Purely evidentiary: if an employee later disputes a
+    # purchase ("I was never there"), this is the objective data point an
+    # admin checks, rather than a real-time block/flag that risks
+    # penalising ordinary GPS drift (very common indoors, e.g. inside a
+    # supermarket or pharmacy).
+    location_distance_meters = Column(Float, nullable=True)
 
     # --- Dispute tracking ---
     # Deliberately pure status/audit-trail only — resolving a dispute has

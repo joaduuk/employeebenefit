@@ -74,6 +74,7 @@ class AdminTransactionView(BaseModel):
     employee_full_name: Optional[str] = None
     employer_company_name: Optional[str] = None
     billing_cycle_status: Optional[str] = None
+    location_distance_meters: Optional[float] = None
     is_disputed: bool
     dispute_reason: Optional[str] = None
     disputed_at: Optional[datetime] = None

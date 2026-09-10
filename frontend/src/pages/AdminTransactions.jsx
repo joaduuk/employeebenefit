@@ -157,6 +157,14 @@ export default function AdminTransactions() {
                         <div><span style={{ color: 'var(--color-text-muted)' }}>Employer:</span> {t.employer_company_name || '—'}</div>
                         <div><span style={{ color: 'var(--color-text-muted)' }}>Billing cycle:</span> {t.billing_cycle_status ? t.billing_cycle_status.replace(/_/g, ' ') : '—'}</div>
                         <div><span style={{ color: 'var(--color-text-muted)' }}>Approved:</span> {t.approved_at ? new Date(t.approved_at).toLocaleString() : '—'}</div>
+                        <div>
+                          <span style={{ color: 'var(--color-text-muted)' }}>Location at approval:</span>{' '}
+                          {t.location_distance_meters != null ? (
+                            <span style={{ fontWeight: '700', color: t.location_distance_meters <= 150 ? 'var(--color-success-text)' : 'var(--color-danger-text)' }}>
+                              {t.location_distance_meters < 1000 ? `${Math.round(t.location_distance_meters)}m from merchant` : `${(t.location_distance_meters / 1000).toFixed(1)}km from merchant`}
+                            </span>
+                          ) : 'Not available'}
+                        </div>
                       </div>
 
                       {t.is_disputed && (
