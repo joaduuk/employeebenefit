@@ -52,5 +52,10 @@ class Settings:
     SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "admin@eebapp.com")
     SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "EEB")
 
+    # --- Address lookup (Homedata — https://homedata.co.uk) ---
+    # Free tier: 100 calls/month, no card required. Kept server-side —
+    # see services/address_lookup.py — never exposed to the frontend.
+    HOMEDATA_API_KEY: str = os.getenv("HOMEDATA_API_KEY", "")
+
 
 settings = Settings()

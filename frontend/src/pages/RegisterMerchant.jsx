@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../services/api';
 import LegalDocumentModal from '../components/LegalDocumentModal';
+import AddressLookup from '../components/AddressLookup';
 
 const inputStyle = { width: '100%', padding: '0.75rem', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '1rem', boxSizing: 'border-box', fontFamily: 'var(--font-body)', color: 'var(--color-text)' };
 const labelStyle = { display: 'block', marginBottom: '0.4rem', color: 'var(--color-text-secondary)', fontWeight: '600', fontSize: '0.875rem' };
@@ -18,7 +19,8 @@ const SuccessBanner = ({ msg }) => msg ? (
 
 const EMPTY_FORM = {
   full_name: '', email: '', phone: '', password: '',
-  business_name: '', owner_name: '', business_address: '',
+  business_name: '', owner_name: '',
+  business_address: '', postcode: '', latitude: null, longitude: null,
   category: 'other', registration_number: '',
   payout_account_name: '', payout_account_number: '', payout_sort_code: '',
   agreed_to_terms: false,
@@ -40,10 +42,21 @@ export default function RegisterMerchant() {
   const [openDoc, setOpenDoc] = useState(null); // null | 'terms' | 'privacy'
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  const handleAddressChange = (addr) => {
+    setForm((f) => ({
+      ...f,
+      business_address: addr.business_address,
+      postcode: addr.postcode,
+      latitude: addr.latitude,
+      longitude: addr.longitude,
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(''); setSuccess('');
     if (form.password.length < 8) { setError('Password must be at least 8 characters'); return; }
+    if (!form.business_address) { setError('Please provide your business address'); return; }
     if (!form.agreed_to_terms) { setError('You must agree to the Merchant Agreement and Privacy Policy to register'); return; }
 
     setLoading(true);
@@ -99,7 +112,7 @@ export default function RegisterMerchant() {
               </div>
               <div style={fieldStyle}>
                 <label style={labelStyle}>Business Address</label>
-                <input type="text" value={form.business_address} onChange={set('business_address')} style={inputStyle} />
+                <AddressLookup onAddressChange={handleAddressChange} />
               </div>
               <div style={fieldStyle}>
                 <label style={labelStyle}>Business Type</label>

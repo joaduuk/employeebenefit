@@ -111,6 +111,7 @@ def register_merchant(payload: MerchantRegisterRequest, request: Request, db: Se
         business_name=payload.business_name,
         owner_name=payload.owner_name,
         business_address=payload.business_address,
+        postcode=payload.postcode,
         category=payload.category,
         registration_number=payload.registration_number,
         payout_account_name=payload.payout_account_name,

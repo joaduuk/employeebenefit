@@ -30,11 +30,14 @@ class MerchantAdminView(BaseModel):
     business_name: str
     owner_name: Optional[str] = None
     business_address: Optional[str] = None
+    postcode: Optional[str] = None
     category: MerchantCategory
     registration_number: Optional[str] = None
     payout_account_name: Optional[str] = None
     payout_account_number: Optional[str] = None
     payout_sort_code: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     application_status: str
     payments_enabled: bool
     payouts_enabled: bool
@@ -46,6 +49,14 @@ class MerchantAdminView(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class MerchantDetailsUpdateRequest(BaseModel):
+    business_address: Optional[str] = None
+    postcode: Optional[str] = None
+    owner_name: Optional[str] = None
+    registration_number: Optional[str] = None
+    category: Optional[MerchantCategory] = None
 
 
 class ApprovalDecisionRequest(BaseModel):

@@ -42,6 +42,7 @@ class Merchant(Base, ApprovalAuditMixin):
     business_name = Column(String, nullable=False)
     owner_name = Column(String, nullable=True)
     business_address = Column(String, nullable=True)
+    postcode = Column(String, nullable=True, index=True)
     category = Column(SAEnum(MerchantCategory), nullable=False, default=MerchantCategory.OTHER)
     registration_number = Column(String, nullable=True)  # company reg number, if applicable
 
@@ -54,7 +55,11 @@ class Merchant(Base, ApprovalAuditMixin):
     payout_sort_code = Column(String, nullable=True)
 
     # Store location — used to check the employee's location against the
-    # merchant's when approving a QR transaction.
+    # merchant's when approving a QR transaction, and to power the
+    # merchant search + map features. Populated automatically from
+    # `postcode` via services/geocoding.py at approval time (or manually
+    # via PUT /admin/merchants/{id}/geocode if the postcode is corrected
+    # later).
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
 

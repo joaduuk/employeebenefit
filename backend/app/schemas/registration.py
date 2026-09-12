@@ -48,11 +48,17 @@ class MerchantRegisterRequest(_AccountFields):
     business_name: str
     owner_name: Optional[str] = None
     business_address: Optional[str] = None
+    postcode: Optional[str] = None
     category: MerchantCategory = MerchantCategory.OTHER
     registration_number: Optional[str] = None
     payout_account_name: Optional[str] = None
     payout_account_number: Optional[str] = None
     payout_sort_code: Optional[str] = None
+    # Populated when the merchant selects an address via the Homedata
+    # lookup on the registration form (rooftop-precision coordinates
+    # from the retrieve step) — left null for manual address entry,
+    # in which case approval-time postcode geocoding fills the gap
+    # instead (see routers/admin.py approve_merchant).
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 

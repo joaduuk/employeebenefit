@@ -2,7 +2,7 @@
 import calendar
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 from typing import List, Optional
@@ -10,7 +10,7 @@ from typing import List, Optional
 from app.core.database import get_db
 from app.core.dependencies import require_platform_staff
 from app.models.employer import Employer
-from app.models.merchant import Merchant
+from app.models.merchant import Merchant, MerchantCategory
 from app.models.employee_profile import EmployeeProfile
 from app.models.merchant_settlement import MerchantSettlement, MerchantSettlementStatus
 from app.models.billing_cycle import BillingCycle, BillingCycleStatus
@@ -19,12 +19,13 @@ from app.models.audit_log import AuditLog
 from app.models.cash_position import CashPositionEntry
 from app.models.user import User
 from app.models.approval import ApplicationStatus
-from app.schemas.admin import EmployerAdminView, MerchantAdminView, ApprovalDecisionRequest, PayoutToggleRequest
+from app.schemas.admin import EmployerAdminView, MerchantAdminView, ApprovalDecisionRequest, PayoutToggleRequest, MerchantDetailsUpdateRequest
 from app.schemas.employee import EmployeeAdminView, EmployeeApprovalRequest
 from app.schemas.merchant_settlement import MarkSettlementPaidRequest
 from app.schemas.transaction import AdminTransactionView
 from app.services.export import export_response
 from app.services.pdf_reports import generate_accounting_summary_pdf, generate_settlement_statement_pdf
+from app.services.geocoding import geocode_uk_postcode
 from app.core.email import (
     send_application_approved_email, send_application_rejected_email, send_account_suspended_email,
     send_settlement_paid_email,
@@ -181,11 +182,14 @@ def _to_merchant_admin_view(merchant: Merchant, owner_user: User) -> MerchantAdm
         business_name=merchant.business_name,
         owner_name=merchant.owner_name,
         business_address=merchant.business_address,
+        postcode=merchant.postcode,
         category=merchant.category,
         registration_number=merchant.registration_number,
         payout_account_name=merchant.payout_account_name,
         payout_account_number=merchant.payout_account_number,
         payout_sort_code=merchant.payout_sort_code,
+        latitude=merchant.latitude,
+        longitude=merchant.longitude,
         application_status=merchant.application_status.value,
         payments_enabled=merchant.payments_enabled,
         payouts_enabled=merchant.payouts_enabled,
@@ -200,12 +204,26 @@ def _to_merchant_admin_view(merchant: Merchant, owner_user: User) -> MerchantAdm
 @router.get("/merchants", response_model=List[MerchantAdminView])
 def list_merchants(
     status: Optional[ApplicationStatus] = Query(None, description="Filter by application status; omit for all"),
+    category: Optional[MerchantCategory] = Query(None, description="Filter by merchant category"),
+    q: Optional[str] = Query(None, description="Context-sensitive search across business name, postcode, and address"),
     db: Session = Depends(get_db),
     _staff: User = Depends(require_platform_staff()),
 ):
     query = db.query(Merchant, User).join(User, Merchant.user_id == User.id)
     if status is not None:
         query = query.filter(Merchant.application_status == status)
+    if category is not None:
+        query = query.filter(Merchant.category == category)
+    if q:
+        like = f"%{q.strip()}%"
+        query = query.filter(
+            or_(
+                Merchant.business_name.ilike(like),
+                Merchant.postcode.ilike(like),
+                Merchant.business_address.ilike(like),
+                Merchant.owner_name.ilike(like),
+            )
+        )
     rows = query.order_by(Merchant.submitted_at.asc()).all()
     return [_to_merchant_admin_view(merchant, user) for merchant, user in rows]
 
@@ -244,6 +262,19 @@ def approve_merchant(
     merchant.reviewed_by_user_id = staff.id
     merchant.reviewed_at = datetime.utcnow()
     merchant.decision_note = payload.decision_note
+
+    # Geocode on approval if we have a postcode but no coordinates yet —
+    # keeps the merchant map/search populated without a separate manual
+    # step for the common case. Failures here are non-fatal: approval
+    # still goes through, coordinates can be filled in later via the
+    # manual /geocode endpoint below.
+    if merchant.postcode and (merchant.latitude is None or merchant.longitude is None):
+        coords = geocode_uk_postcode(merchant.postcode)
+        if coords:
+            merchant.latitude, merchant.longitude = coords
+        else:
+            print(f"[GEOCODE] could not geocode postcode '{merchant.postcode}' for merchant {merchant.id}")
+
     log_audit(db, staff, "merchant.approve", "merchant", merchant.id, details=payload.decision_note)
     db.commit()
     db.refresh(merchant)
@@ -253,6 +284,87 @@ def approve_merchant(
         send_application_approved_email(owner_user.email, owner_user.full_name, "Your merchant account is approved — you can now start accepting EEB payments.")
     except Exception as e:
         print(f"[EMAIL] merchant approved notification failed: {e}")
+    return _to_merchant_admin_view(merchant, owner_user)
+
+
+@router.put("/merchants/{merchant_id}/geocode", response_model=MerchantAdminView)
+def geocode_merchant(
+    merchant_id: str,
+    db: Session = Depends(get_db),
+    staff: User = Depends(require_platform_staff()),
+):
+    """
+    Manual re-geocode — use this after correcting a merchant's postcode,
+    or to retry a merchant that failed to geocode automatically at
+    approval time.
+    """
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Merchant not found")
+    if not merchant.postcode:
+        raise HTTPException(status_code=400, detail="Merchant has no postcode on file to geocode")
+
+    coords = geocode_uk_postcode(merchant.postcode)
+    if not coords:
+        raise HTTPException(status_code=422, detail=f"Could not geocode postcode '{merchant.postcode}'")
+
+    merchant.latitude, merchant.longitude = coords
+    log_audit(db, staff, "merchant.geocode", "merchant", merchant.id, details=f"postcode={merchant.postcode}")
+    db.commit()
+    db.refresh(merchant)
+
+    owner_user = db.query(User).filter(User.id == merchant.user_id).first()
+    return _to_merchant_admin_view(merchant, owner_user)
+
+
+@router.put("/merchants/{merchant_id}/details", response_model=MerchantAdminView)
+def update_merchant_details(
+    merchant_id: str,
+    payload: MerchantDetailsUpdateRequest,
+    db: Session = Depends(get_db),
+    staff: User = Depends(require_platform_staff()),
+):
+    """
+    Admin-side edit for merchant record details — primarily so a
+    postcode can be added or corrected for merchants that registered
+    before `postcode` existed as a field (or mistyped it at
+    registration), without needing direct database access.
+
+    All fields are optional; only the ones provided are changed. If the
+    postcode is changed to a new value, this automatically re-geocodes
+    it, same as the dedicated /geocode endpoint.
+    """
+    merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Merchant not found")
+
+    postcode_changed = False
+
+    if payload.business_address is not None:
+        merchant.business_address = payload.business_address
+    if payload.postcode is not None:
+        if payload.postcode.strip().upper() != (merchant.postcode or "").strip().upper():
+            postcode_changed = True
+        merchant.postcode = payload.postcode
+    if payload.owner_name is not None:
+        merchant.owner_name = payload.owner_name
+    if payload.registration_number is not None:
+        merchant.registration_number = payload.registration_number
+    if payload.category is not None:
+        merchant.category = payload.category
+
+    if postcode_changed and merchant.postcode:
+        coords = geocode_uk_postcode(merchant.postcode)
+        if coords:
+            merchant.latitude, merchant.longitude = coords
+        else:
+            print(f"[GEOCODE] could not geocode postcode '{merchant.postcode}' for merchant {merchant.id}")
+
+    log_audit(db, staff, "merchant.update_details", "merchant", merchant.id, details="admin edited merchant details")
+    db.commit()
+    db.refresh(merchant)
+
+    owner_user = db.query(User).filter(User.id == merchant.user_id).first()
     return _to_merchant_admin_view(merchant, owner_user)
 
 

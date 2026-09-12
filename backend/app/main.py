@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import Base, engine
 from app import models  # noqa: F401 — registers all tables on Base.metadata
-from app.routers import auth, registration, admin, profile, contact
+from app.routers import auth, registration, admin, profile, contact, public, address_lookup
 from app.routers import employer as employer_router
 from app.routers import merchant as merchant_router, employee as employee_router
 from app.services.payroll_scheduler import start_scheduler as start_payroll_scheduler
@@ -46,6 +46,8 @@ app.include_router(merchant_router.router)
 app.include_router(employee_router.router)
 app.include_router(profile.router)
 app.include_router(contact.router)
+app.include_router(public.router)
+app.include_router(address_lookup.router)
 
 
 @app.on_event("startup")

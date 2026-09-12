@@ -40,6 +40,7 @@ import AdminAuditLog from './pages/AdminAuditLog';
 import EmployeeTerms from './pages/EmployeeTerms';
 import EmployerAgreement from './pages/EmployerAgreement';
 import MerchantAgreement from './pages/MerchantAgreement';
+import FindMerchants from './pages/FindMerchants';
 
 function AppContent() {
   return (
@@ -54,6 +55,7 @@ function AppContent() {
       <Route path="/register/employer" element={<RegisterEmployer />} />
       <Route path="/register/merchant" element={<RegisterMerchant />} />
       <Route path="/register/employee" element={<RegisterEmployee />} />
+      <Route path="/find-merchants" element={<FindMerchants />} />
 
       {/* Public — no login required. */}
       <Route path="/about" element={<About />} />
